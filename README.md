@@ -28,7 +28,7 @@ We plan to create a Linux version and continue with more updates and bug fixes. 
 
 ## Credits
 
-Developer: Muhammed Shafin P (hejhdiss)
+Developer: Muhammed Shafin P ([@hejhdiss](https://github.com/hejhdiss))
 
 Built with PySide6, PyInstaller, and Inno Setup.
 
@@ -36,6 +36,3 @@ Built with PySide6, PyInstaller, and Inno Setup.
 
 This project is licensed under the [MIT License](LICENSE.txt).
 
-## Repository
-
-GitHub: [https://github.com/hejhdiss/Infoscava](https://github.com/hejhdiss/Infoscava)
