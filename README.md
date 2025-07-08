@@ -6,6 +6,8 @@
   <img src="icon.jpg" width="128" height="128" alt="Infoscava Icon">
 </p>
 
+**Download:**[v1.0.0](https://github.com/hejhdiss/Infoscava/releases/tag/v1.0.0)
+
 ## Key Features in v1.0.0
 
 - File Analysis: Metadata, hashes, text, hex, structured data (JSON, XML, CSV), image, Base64, entropy, byte histograms.
