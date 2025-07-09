@@ -6,7 +6,7 @@
   <img src="icon.jpg" width="128" height="128" alt="Infoscava Icon">
 </p>
 
-**Download:**[v1.0.0](https://github.com/hejhdiss/Infoscava/releases/tag/v1.4.5)
+**Download:**[v1.4.5](https://github.com/hejhdiss/Infoscava/releases/tag/v1.4.5)
 
 ## Key Features in v1.4.5
 
