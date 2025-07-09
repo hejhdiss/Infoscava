@@ -2,7 +2,7 @@
 
 [Setup]
 AppName={#AppName}
-AppVersion=1.0.0
+AppVersion=1.4.5
 AppPublisher=Muhammed Shafin P
 AppPublisherURL=https://github.com/hejhdiss
 AppSupportURL=https://github.com/hejhdiss/Infoscava/issues
