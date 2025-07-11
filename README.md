@@ -6,9 +6,9 @@
   <img src="icon.jpg" width="128" height="128" alt="Infoscava Icon">
 </p>
 
-**Download:**[v1.4.5](https://github.com/hejhdiss/Infoscava/releases/tag/v1.4.5)
+**Download:**[v2.1.9](https://github.com/hejhdiss/Infoscava/releases/tag/v2.1.9)
 
-## Key Features in v1.4.5
+## Key Features in v2.1.9
 
 - **File Analysis:** Metadata, hashes, text, hex, structured data (JSON), image (EXIF, GPS), Base64, entropy, byte histograms.
 - **User Interface:** Tabbed design, file browser, drag-and-drop, theme toggle, file watcher, keyboard shortcuts, analysis export.
@@ -17,6 +17,8 @@
 - **Standard Installer:** User-friendly installation.
 - **Right-Click Context Menu:** "Open with Infoscava" integration.
 - **Security Enhancements:** Basic security checks to prevent loading files from sensitive system directories.
+- **Additional Search Tab** with multi-match highlighting, match navigation, and live results.
+- **UI Bug Fix**: Patched issue where the Light (White) Theme was not applied correctly to the QTreeView file browser.
 
 ### User Interface:
 
@@ -47,7 +49,7 @@ We plan to create a Linux version and continue with more updates and bug fixes. 
 
 Developer: Muhammed Shafin P ([@hejhdiss](https://github.com/hejhdiss))
 
-Built with PySide6, PyInstaller, and Inno Setup.
+Built with PySide6, PyInstaller, and Inno Setup.(**Python 3.11**)
 
 ## License
 

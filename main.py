@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
     QMenuBar, QToolBar, QMenu, QGraphicsView, QGraphicsScene,
     QGraphicsPixmapItem, QHeaderView, QTableWidget, QTableWidgetItem,
     QSpinBox, QCheckBox, QTextBrowser, QListWidget, QListWidgetItem,
-    QStackedWidget # Added for StructuredView improvement
+    QStackedWidget, QFormLayout, QDoubleSpinBox, QStyle,QProxyStyle, QStyleOption # Added QFormLayout, QDoubleSpinBox
 )
 from PySide6.QtCore import (
     Qt, QThread, Signal, QRunnable, QThreadPool, QUrl, QTimer,
@@ -51,26 +51,38 @@ from PySide6.QtGui import (
     QIcon, QTextCharFormat, QTextCursor, QSyntaxHighlighter,
     QTextDocument, QFont, QColor, QPalette, QDesktopServices,
     QImage, QPixmap, QPainter, QBrush, QKeySequence, QAction, QFontDatabase,
-    QTextLayout, QTextLine # Added for LineNumberArea fix
+    QTextLayout, QTextLine
 )
 
 # --- Constants ---
-MAX_FILE_SIZE_FOR_FULL_READ = 20 * 1024 * 1024 # 20 MB limit for full file read
-MAX_TEXT_PREVIEW_LINES = 10000
-MAX_HEX_PREVIEW_BYTES = 16384
-MAX_STRUCTURED_PREVIEW_LINES = 100
-MAX_PLUGIN_HISTORY_ENTRIES = 200 # Limit for plugin history log
+# These will now be managed by settings, but provide initial defaults if settings file is absent
+# MAX_FILE_SIZE_FOR_FULL_READ = 20 * 1024 * 1024 # 20 MB limit for full file read
+# MAX_TEXT_PREVIEW_LINES = 10000
+# MAX_HEX_PREVIEW_BYTES = 16384
+# MAX_STRUCTURED_PREVIEW_LINES = 100
+# MAX_PLUGIN_HISTORY_ENTRIES = 200 # Limit for plugin history log
 
 SUPPORTED_ENCODINGS = ['UTF-8', 'UTF-16', 'UTF-16BE', 'UTF-16LE', 'UTF-32', 'UTF-32BE', 'UTF-32LE', 'UTF-7', 'ASCII', 'Windows-1250', 'Windows-1251', 'Windows-1252', 'Windows-1253', 'Windows-1254', 'Windows-1255', 'Windows-1256', 'Windows-1257', 'Windows-1258', 'CP437', 'CP720', 'CP737', 'CP775', 'CP850', 'CP852', 'CP855', 'CP856', 'CP857', 'CP858', 'CP860', 'CP861', 'CP862', 'CP863', 'CP864', 'CP865', 'CP866', 'CP869', 'GB2312', 'GBK', 'GB18030', 'Big5', 'HKSCS', 'Shift-JIS', 'EUC-JP', 'ISO-2022-JP', 'EUC-KR', 'ISO-2022-KR', 'KOI8-R', 'KOI8-U', 'Macintosh', 'MacCyrillic', 'MacGreek', 'MacTurkish', 'HP-Roman8']
 
 # Path for theme settings file (in user's home directory)
 THEME_SETTINGS_FILE = os.path.join(os.path.expanduser('~'), '.infoscava_theme.json')
+# Path for application settings file
+APP_SETTINGS_FILE = os.path.join(os.path.expanduser('~'), '.infoscava_settings.json')
 # Directory for plugin definition files (.infoscava)
 PLUGIN_DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")
 # File to store persistent list of loaded plugins
 PLUGIN_CONFIG_FILE = os.path.join(PLUGIN_DIRECTORY, "plugins_config.json")
 # File to store plugin history
 PLUGIN_HISTORY_FILE = os.path.join(PLUGIN_DIRECTORY, "plugin_history.json")
+
+# Default settings values
+DEFAULT_APP_SETTINGS = {
+    'MAX_FILE_SIZE_FOR_FULL_READ': 20 * 1024 * 1024, # 20 MB
+    'MAX_TEXT_PREVIEW_LINES': 10000,
+    'MAX_HEX_PREVIEW_BYTES': 16384,
+    'MAX_STRUCTURED_PREVIEW_LINES': 100,
+    'MAX_PLUGIN_HISTORY_ENTRIES': 200
+}
 
 
 # --- Utility Functions ---
@@ -158,9 +170,10 @@ class FileAnalyzerThread(QThread):
     error = Signal(str)     # Emits error message string
     progress = Signal(int, str) # Emits progress percentage and message
 
-    def __init__(self, filepath, parent=None):
+    def __init__(self, filepath, max_file_size_for_full_read, parent=None):
         super().__init__(parent)
         self.filepath = filepath
+        self.max_file_size_for_full_read = max_file_size_for_full_read
 
     def run(self):
         """Performs the file analysis operations."""
@@ -302,46 +315,28 @@ class TextHighlighter(QSyntaxHighlighter):
     def __init__(self, parent):
         super().__init__(parent)
         self.highlight_format = QTextCharFormat()
-        self.highlight_range = None
         self.additional_highlights = [] # For multiple search matches
 
     def highlightBlock(self, text):
         """Applies highlighting to a block of text."""
-        # Highlight the primary (current) match
-        if self.highlight_range:
-            start, length = self.highlight_range
-            # Check if the highlight range overlaps with the current text block
-            if start <= self.currentBlock().position() + len(text) and start + length >= self.currentBlock().position():
-                relative_start = max(0, start - self.currentBlock().position())
-                relative_end = min(len(text), start + length - self.currentBlock().position())
-                self.setFormat(relative_start, relative_end - relative_start, self.highlight_format)
-
-        # Highlight additional matches
         for pos, length, fmt in self.additional_highlights:
+            # Check if the highlight range overlaps with the current text block
             if pos <= self.currentBlock().position() + len(text) and pos + length >= self.currentBlock().position():
                 relative_start = max(0, pos - self.currentBlock().position())
                 relative_end = min(len(text), pos + length - self.currentBlock().position())
                 self.setFormat(relative_start, relative_end - relative_start, fmt)
 
-    def set_highlight_format(self, format):
-        """Sets the format for the primary highlight."""
-        self.highlight_format = format
-        self.highlight_range = None # Clear previous range
-        self.additional_highlights = [] # Clear previous additional highlights
-
-    def set_highlight_range(self, start, length):
-        """Sets the range for the primary highlight."""
-        self.highlight_range = (start, length)
-
-    def add_additional_highlights(self, ranges_and_formats, format):
-        """Adds multiple highlight ranges with their formats."""
-        # ranges_and_formats is a list of (pos, length) tuples
-        # format is the QTextCharFormat to apply to these ranges
-        self.additional_highlights.extend([(pos, length, format) for pos, length in ranges_and_formats])
+    def set_highlights(self, ranges_and_formats):
+        """Sets multiple highlight ranges with their formats."""
+        # ranges_and_formats is a list of (pos, length, QTextCharFormat) tuples
+        self.additional_highlights = ranges_and_formats
+        self.rehighlight() # Reapply all highlights
 
 
 class TextTab(QWidget):
-    """Displays file content as text, with encoding selection and search functionality."""
+    """Displays file content as text, with encoding selection and highlighting functionality."""
+    text_content_changed = Signal(str) # New signal: Emits the decoded text content
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.layout = QVBoxLayout(self)
@@ -349,6 +344,7 @@ class TextTab(QWidget):
 
         self.file_content = b""
         self.current_encoding = "UTF-8"
+        self.max_text_preview_lines = DEFAULT_APP_SETTINGS['MAX_TEXT_PREVIEW_LINES'] # Default value
 
         control_layout = QHBoxLayout()
         control_layout.addWidget(QLabel(self.tr("Encoding:")))
@@ -357,26 +353,7 @@ class TextTab(QWidget):
         self.encoding_combo.setCurrentText("UTF-8")
         self.encoding_combo.currentTextChanged.connect(self._redecode_text)
         control_layout.addWidget(self.encoding_combo)
-
         control_layout.addStretch(1)
-
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText(self.tr("Search text..."))
-        self.search_input.returnPressed.connect(self._perform_search)
-        self.search_input.textChanged.connect(self._clear_search_highlight)
-        control_layout.addWidget(self.search_input)
-
-        self.search_count_label = QLabel(self.tr("Matches: 0"))
-        control_layout.addWidget(self.search_count_label)
-
-        self.prev_match_button = QPushButton(self.tr("Previous"))
-        self.prev_match_button.clicked.connect(self._find_prev_match)
-        control_layout.addWidget(self.prev_match_button)
-
-        self.next_match_button = QPushButton(self.tr("Next"))
-        self.next_match_button.clicked.connect(self._find_next_match)
-        control_layout.addWidget(self.next_match_button)
-
         self.layout.addLayout(control_layout)
 
         self.text_editor = QTextEdit()
@@ -400,30 +377,36 @@ class TextTab(QWidget):
         self.text_editor.document().contentsChange.connect(self._handle_contents_change)
 
         self.highlighter = TextHighlighter(self.text_editor.document())
-        self.matches = []
-        self.current_match_index = -1
 
     def _handle_contents_change(self, position, charsRemoved, charsAdded):
         self.line_number_area.update_width()
         self.line_number_area.update()
 
-    def set_file_content(self, raw_bytes, encoding_hint=None, is_large=False):
+    def set_file_content(self, raw_bytes, encoding_hint=None, is_large=False, max_text_preview_lines=None):
         self.file_content = raw_bytes
         self.is_large_file = is_large
+        if max_text_preview_lines is not None:
+            self.max_text_preview_lines = max_text_preview_lines
+        
+        # Clear existing highlights when new content is set
+        self.highlighter.set_highlights([])
+
         if is_large:
-            self.text_editor.setPlainText(self.tr(f"File too large for full display. Showing first {MAX_TEXT_PREVIEW_LINES} lines.\n"))
-            self.text_editor.append(self.tr("--- Preview Mode ---"))
+            display_text = self.tr(f"File too large for full display. Showing first {self.max_text_preview_lines} lines.\n")
+            display_text += self.tr("--- Preview Mode ---\n")
             try:
                 decoded_text = self.file_content.decode(encoding_hint or "utf-8", errors='replace')
                 lines = decoded_text.splitlines()
-                self.text_editor.append("\n".join(lines[:MAX_TEXT_PREVIEW_LINES]))
+                display_text += "\n".join(lines[:self.max_text_preview_lines])
             except Exception as e:
-                self.text_editor.append(self.tr(f"Could not decode preview with {encoding_hint}: {e}"))
-                self.text_editor.append(self.tr("Attempting with UTF-8..."))
+                display_text += self.tr(f"Could not decode preview with {encoding_hint}: {e}\n")
+                display_text += self.tr("Attempting with UTF-8...\n")
                 try:
-                    self.text_editor.append(self.file_content.decode("utf-8", errors='replace'))
+                    display_text += self.file_content.decode("utf-8", errors='replace')
                 except Exception as e:
-                    self.text_editor.append(self.tr(f"Could not decode with UTF-8: {e}"))
+                    display_text += self.tr(f"Could not decode with UTF-8: {e}")
+            self.text_editor.setPlainText(display_text)
+            self.text_content_changed.emit(display_text) # Emit the (truncated) text
         else:
             if encoding_hint and encoding_hint in SUPPORTED_ENCODINGS:
                 self.encoding_combo.setCurrentText(encoding_hint)
@@ -437,105 +420,57 @@ class TextTab(QWidget):
             decoded_text = self.file_content.decode(encoding, errors='replace')
             self.text_editor.setPlainText(decoded_text)
             self.text_editor.verticalScrollBar().setValue(0)
-            self._clear_search_highlight()
+            self.text_content_changed.emit(decoded_text) # Emit the full decoded text
+            # Clear existing highlights when text is redecoded
+            self.highlighter.set_highlights([])
         except LookupError:
-            self.text_editor.setPlainText(self.tr(f"Error: Encoding '{encoding}' not supported by Python. Please choose another."))
-            self._clear_search_highlight()
+            error_text = self.tr(f"Error: Encoding '{encoding}' not supported by Python. Please choose another.")
+            self.text_editor.setPlainText(error_text)
+            self.text_content_changed.emit(error_text)
+            self.highlighter.set_highlights([])
         except Exception as e:
-            self.text_editor.setPlainText(self.tr(f"Error decoding with '{encoding}': {e}\n\nAttempting with UTF-8 (replace errors)..."))
+            error_text = self.tr(f"Error decoding with '{encoding}': {e}\n\nAttempting with UTF-8 (replace errors)...")
             try:
                 self.text_editor.setPlainText(self.file_content.decode("utf-8", errors='replace'))
+                self.text_content_changed.emit(self.text_editor.toPlainText())
             except Exception as e_utf8:
-                self.text_editor.setPlainText(self.tr(f"Critical Error: Could not decode with any fallback: {e_utf8}"))
-            self._clear_search_highlight()
+                critical_error_text = self.tr(f"Critical Error: Could not decode with any fallback: {e_utf8}")
+                self.text_editor.setPlainText(critical_error_text)
+                self.text_content_changed.emit(critical_error_text)
+            self.highlighter.set_highlights([])
 
-    def _perform_search(self):
-        query = self.search_input.text()
-        if not query:
-            self._clear_search_highlight()
-            return
-
-        self.matches = []
-        document = self.text_editor.document()
-        cursor = QTextCursor(document)
-        
-        # Clear previous highlights before new search
-        self.highlighter.set_highlight_format(QTextCharFormat())
-        self.highlighter.rehighlight()
-
-        cursor.beginEditBlock()
-        while not cursor.isNull() and not cursor.atEnd():
-            cursor = document.find(query, cursor, QTextDocument.FindCaseSensitively)
-            if not cursor.isNull():
-                self.matches.append(cursor.selectionStart())
-        cursor.endEditBlock()
-
-        self.search_count_label.setText(self.tr(f"Matches: {len(self.matches)}"))
-
-        if self.matches:
-            self.current_match_index = 0
-            self._highlight_current_match()
-            self._scroll_to_match(self.matches[0])
-        else:
-            self.current_match_index = -1
-
-    def _clear_search_highlight(self):
-        self.highlighter.set_highlight_format(QTextCharFormat())
-        self.highlighter.rehighlight()
-        self.matches = []
-        self.current_match_index = -1
-        self.search_count_label.setText(self.tr("Matches: 0"))
-
-    def _highlight_current_match(self):
-        if not self.matches or self.current_match_index == -1:
-            return
-
-        # Clear all existing highlights first
-        self.highlighter.set_highlight_format(QTextCharFormat())
-        self.highlighter.rehighlight()
-
-        current_pos = self.matches[self.current_match_index]
-        query_len = len(self.search_input.text())
+    def highlight_matches(self, matches_data, current_match_index, query_length):
+        """
+        Applies highlighting to the QTextEdit based on search results.
+        matches_data: List of (start_pos, line_number) tuples.
+        current_match_index: Index of the match to highlight differently.
+        query_length: Length of the search query.
+        """
+        all_highlights = []
 
         # Format for the current match
         current_match_format = QTextCharFormat()
         current_match_format.setBackground(QColor("orange"))
         current_match_format.setForeground(QColor("black"))
 
-        # Set the primary highlight for the current match
-        self.highlighter.set_highlight_format(current_match_format)
-        self.highlighter.set_highlight_range(current_pos, query_len)
-
         # Format for other matches
         other_match_format = QTextCharFormat()
         other_match_format.setBackground(QColor("yellow"))
         other_match_format.setForeground(QColor("black"))
 
-        # Add other matches as additional highlights
-        other_matches_ranges = [(pos, query_len) for i, pos in enumerate(self.matches) if i != self.current_match_index]
-        self.highlighter.add_additional_highlights(other_matches_ranges, other_match_format)
+        for i, (start_pos, _) in enumerate(matches_data):
+            fmt = current_match_format if i == current_match_index else other_match_format
+            all_highlights.append((start_pos, query_length, fmt))
+        
+        self.highlighter.set_highlights(all_highlights)
 
-        self.highlighter.rehighlight() # Reapply all highlights
+        # Scroll to the current match
+        if matches_data and current_match_index != -1:
+            cursor = QTextCursor(self.text_editor.document())
+            cursor.setPosition(matches_data[current_match_index][0])
+            self.text_editor.setTextCursor(cursor)
+            self.text_editor.ensureCursorVisible()
 
-    def _scroll_to_match(self, position):
-        cursor = QTextCursor(self.text_editor.document())
-        cursor.setPosition(position)
-        self.text_editor.setTextCursor(cursor)
-        self.text_editor.ensureCursorVisible()
-
-    def _find_prev_match(self):
-        if not self.matches:
-            return
-        self.current_match_index = (self.current_match_index - 1) % len(self.matches)
-        self._highlight_current_match()
-        self._scroll_to_match(self.matches[self.current_match_index])
-
-    def _find_next_match(self):
-        if not self.matches:
-            return
-        self.current_match_index = (self.current_match_index + 1) % len(self.matches)
-        self._highlight_current_match()
-        self._scroll_to_match(self.matches[self.current_match_index])
 
 class LineNumberArea(QWidget):
     def __init__(self, editor):
@@ -612,6 +547,7 @@ class HexView(QWidget):
 
         self.file_content = b""
         self.is_large_file = False
+        self.max_hex_preview_bytes = DEFAULT_APP_SETTINGS['MAX_HEX_PREVIEW_BYTES'] # Default value
 
         control_layout = QHBoxLayout()
         control_layout.addWidget(QLabel(self.tr("Bytes per line:")))
@@ -636,9 +572,11 @@ class HexView(QWidget):
         self.hex_editor.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.layout.addWidget(self.hex_editor)
 
-    def set_file_content(self, raw_bytes, is_large=False):
+    def set_file_content(self, raw_bytes, is_large=False, max_hex_preview_bytes=None):
         self.file_content = raw_bytes
         self.is_large_file = is_large
+        if max_hex_preview_bytes is not None:
+            self.max_hex_preview_bytes = max_hex_preview_bytes
         self._update_hex_display()
 
     def _update_hex_display(self):
@@ -648,8 +586,8 @@ class HexView(QWidget):
         data_to_display = self.file_content
 
         if self.is_large_file:
-            data_to_display = self.file_content[:MAX_HEX_PREVIEW_BYTES]
-            hex_output.append(self.tr(f"File too large for full hex dump. Showing first {MAX_HEX_PREVIEW_BYTES} bytes.\n"))
+            data_to_display = self.file_content[:self.max_hex_preview_bytes]
+            hex_output.append(self.tr(f"File too large for full hex dump. Showing first {self.max_hex_preview_bytes} bytes.\n"))
             hex_output.append(self.tr("--- Preview Mode ---\n"))
 
         for i in range(0, len(data_to_display), bytes_per_line):
@@ -691,11 +629,15 @@ class StructuredView(QWidget):
         self.table_widget.verticalHeader().setVisible(False) # Hide row numbers
         self.stacked_widget.addWidget(self.table_widget) # Index 1
 
-    def set_file_content(self, raw_bytes, mime_type, encoding_hint="utf-8", is_large=False):
+        self.max_structured_preview_lines = DEFAULT_APP_SETTINGS['MAX_STRUCTURED_PREVIEW_LINES'] # Default value
+
+    def set_file_content(self, raw_bytes, mime_type, encoding_hint="utf-8", is_large=False, max_structured_preview_lines=None):
         self.text_editor.clear()
         self.table_widget.clear()
         self.table_widget.setRowCount(0)
         self.table_widget.setColumnCount(0)
+        if max_structured_preview_lines is not None:
+            self.max_structured_preview_lines = max_structured_preview_lines
 
         decoded_content = ""
         try:
@@ -715,14 +657,12 @@ class StructuredView(QWidget):
                 if isinstance(data, list) and all(isinstance(item, dict) for item in data):
                     self.stacked_widget.setCurrentIndex(1) # Show table
                     self._populate_table_from_list_of_dicts(data)
-                    if is_large and len(data) > MAX_STRUCTURED_PREVIEW_LINES:
+                    if is_large and len(data) > self.max_structured_preview_lines:
                         # For large JSON lists, display a message in the text editor (index 0)
                         # and still show the truncated table (index 1).
                         # This means we might need to show both, or prioritize the table.
                         # For now, let's prioritize the table and just print a message.
-                        print(self.tr(f"JSON data truncated to {MAX_STRUCTURED_PREVIEW_LINES} rows for display."))
-                        # Optionally, you could add a QLabel above the table for this message
-                        # self.table_message_label.setText(...)
+                        pass
                 elif isinstance(data, dict):
                     self.stacked_widget.setCurrentIndex(1) # Show table
                     self._populate_table_from_single_dict(data)
@@ -732,7 +672,7 @@ class StructuredView(QWidget):
                     pretty_json = json.dumps(data, indent=4, ensure_ascii=False)
                     if is_large:
                         lines = pretty_json.splitlines()
-                        self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {MAX_STRUCTURED_PREVIEW_LINES} lines.\n\n--- Preview Mode ---\n") + "\n".join(lines[:MAX_STRUCTURED_PREVIEW_LINES]))
+                        self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {self.max_structured_preview_lines} lines.\n\n--- Preview Mode ---\n") + "\n".join(lines[:self.max_structured_preview_lines]))
                     else:
                         self.text_editor.setPlainText(pretty_json)
             except json.JSONDecodeError as e:
@@ -755,7 +695,7 @@ class StructuredView(QWidget):
                 
                 if is_large:
                     lines = pretty_xml.splitlines()
-                    self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {MAX_STRUCTURED_PREVIEW_LINES} lines.\n\n--- Preview Mode ---\n") + "\n".join(lines[:MAX_STRUCTURED_PREVIEW_LINES]))
+                    self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {self.max_structured_preview_lines} lines.\n\n--- Preview Mode ---\n") + "\n".join(lines[:self.max_structured_preview_lines]))
                 else:
                     self.text_editor.setPlainText(pretty_xml)
             except ET.ParseError as e:
@@ -775,8 +715,6 @@ class StructuredView(QWidget):
                     if sniff_content: # Only sniff if there's content
                         dialect = csv.Sniffer().sniff(sniff_content)
                 except csv.Error as e:
-                    print(self.tr(f"CSV Sniffer failed to detect dialect, using default excel dialect. Error: {e}"))
-                    # Fallback to default excel dialect if sniffing fails
                     pass 
 
                 reader = csv.reader(f, dialect)
@@ -790,7 +728,6 @@ class StructuredView(QWidget):
                     # Check if the first row is likely a header using sniffer's has_header
                     # If has_header fails (e.g., on very short content), treat it as data.
                     try:
-                        # Attempt to determine if it's a header more robustly
                         # This is a simple heuristic: if it's not just numbers and has some text, assume header
                         is_likely_header = False
                         if any(isinstance(item, str) and not item.strip().replace('.', '', 1).isdigit() for item in first_row):
@@ -821,10 +758,10 @@ class StructuredView(QWidget):
                     self.table_widget.setHorizontalHeaderLabels([self.tr(f"Column {i+1}") for i in range(max_cols)])
 
                 # Handle large file preview for CSV
-                if is_large and len(data) > MAX_STRUCTURED_PREVIEW_LINES:
-                    self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {MAX_STRUCTURED_PREVIEW_LINES} rows.\n\n--- Preview Mode ---\n"))
+                if is_large and len(data) > self.max_structured_preview_lines:
+                    self.text_editor.setPlainText(self.tr(f"File too large for full structured display. Showing first {self.max_structured_preview_lines} rows.\n\n--- Preview Mode ---\n"))
                     self.stacked_widget.setCurrentIndex(0) # Show text editor for the message
-                    data = data[:MAX_STRUCTURED_PREVIEW_LINES] # Truncate data for display
+                    data = data[:self.max_structured_preview_lines] # Truncate data for display
                     # Then fall through to display the truncated table
                     self.stacked_widget.setCurrentIndex(1) # Switch back to table view after setting message
                 else:
@@ -1073,12 +1010,13 @@ class PluginManager(QObject):
     plugin_reloaded_signal = Signal() # Emits when plugins are reloaded (all or specific)
     reanalyze_requested = Signal() # New signal: Request main window to re-analyze current file
 
-    def __init__(self, parent=None):
+    def __init__(self, max_plugin_history_entries, parent=None):
         super().__init__(parent)
         # Stores {plugin_name: {'module': module_obj, 'function': func_obj, 'type': plugin_type, 'description': desc, 'json_path': path, 'plugin_py_path': path, 'tab_title': title}}
         self.loaded_plugins = {}
         self.plugin_history_tab = None # Reference to the UI tab for logging
         self.history_entries = [] # In-memory list of history entries
+        self.max_plugin_history_entries = max_plugin_history_entries # Set from settings
 
         # Ensure plugin directories exist
         os.makedirs(PLUGIN_DIRECTORY, exist_ok=True)
@@ -1090,18 +1028,39 @@ class PluginManager(QObject):
         # DO NOT call _update_history_display here to keep the tab blank on startup
         # New entries will be added via _log()
 
+    def update_settings(self, new_max_history_entries):
+        """Updates the maximum history entries setting."""
+        self.max_plugin_history_entries = new_max_history_entries
+        # Trim history if new limit is smaller
+        if len(self.history_entries) > self.max_plugin_history_entries:
+            self.history_entries = self.history_entries[-self.max_plugin_history_entries:]
+            if self.plugin_history_tab:
+                self._update_history_display() # Force re-display to reflect trimming
+
     def _log(self, message):
         """Logs messages to the in-memory history and updates the UI."""
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         full_message = f"[{timestamp}] {message}"
         self.history_entries.append(full_message)
         # Trim history to MAX_PLUGIN_HISTORY_ENTRIES
-        if len(self.history_entries) > MAX_PLUGIN_HISTORY_ENTRIES:
-            self.history_entries = self.history_entries[-MAX_PLUGIN_HISTORY_ENTRIES:]
+        if len(self.history_entries) > self.max_plugin_history_entries:
+            self.history_entries = self.history_entries[-self.max_plugin_history_entries:]
         
-        if self.plugin_history_tab:
-            self.plugin_history_tab.add_log_entry(full_message)
-        # print(full_message) # Keep for console debugging if needed
+        # Safely update UI only if the widget still exists and is not destroyed
+        if self.plugin_history_tab and self.plugin_history_tab.history_text_edit:
+            # Check if the underlying C++ object is still valid
+            # A common way is to check if it still has a parent.
+            # If the parent is None, the widget has likely been deleted.
+            if not self.plugin_history_tab.history_text_edit.parent() is None:
+                try:
+                    self.plugin_history_tab.history_text_edit.append(full_message)
+                    self.plugin_history_tab.history_text_edit.verticalScrollBar().setValue(
+                        self.plugin_history_tab.history_text_edit.verticalScrollBar().maximum()
+                    )
+                except RuntimeError:
+                    # Catch the specific RuntimeError if the object was just destroyed between checks
+                    # print(f"Warning: Attempted to log to a destroyed QTextEdit: {full_message}")
+                    pass # Do nothing if the widget is already deleted
 
     def _update_history_display(self):
         """Refreshes the history display in the UI tab.
@@ -1476,9 +1435,8 @@ class PluginManager(QObject):
         self.plugin_reloaded_signal.emit() # Notify UI
         self.reanalyze_requested.emit() # Request re-analysis after all plugins reloaded
 
-    def __del__(self):
-        """Ensures history is saved when PluginManager is destroyed."""
-        self._save_history()
+    # Removed __del__ as it's problematic for Qt widget cleanup order.
+    # The closeEvent in InfoscavaMainWindow handles saving history.
 
 
 class HelpDialog(QDialog):
@@ -1503,7 +1461,8 @@ class HelpDialog(QDialog):
         <h4>Tabs:</h4>
         <ul>
             <li><b>Metadata:</b> Basic file info, hashes, encoding detection, entropy.</li>
-            <li><b>Text:</b> View text content, change encoding, search and highlight.</li>
+            <li><b>Text:</b> View text content, change encoding.</li>
+            <li><b>Search:</b> Search text content with multi-threading and highlight results.</li>
             <li><b>Hex:</b> Raw hexadecimal and ASCII dump.</li>
             <li><b>Structured:</b> Pretty-prints JSON.</li>
             <li><b>Image Metadata:</b> (If image) EXIF and GPS data.</li>
@@ -1543,6 +1502,151 @@ class HelpDialog(QDialog):
         ok_button = QPushButton(self.tr("OK"))
         ok_button.clicked.connect(self.accept)
         self.layout.addWidget(ok_button)
+
+class SettingsManager(QObject):
+    """Manages loading and saving application settings."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.settings = self._load_settings()
+
+    def _load_settings(self):
+        """Loads settings from file or returns defaults."""
+        if os.path.exists(APP_SETTINGS_FILE):
+            try:
+                with open(APP_SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                    loaded_settings = json.load(f)
+                # Validate loaded settings and apply defaults for missing keys
+                for key, default_value in DEFAULT_APP_SETTINGS.items():
+                    # Ensure key exists, is numeric, and for positive-only settings, check if > 0
+                    if key not in loaded_settings or not isinstance(loaded_settings[key], (int, float)):
+                        loaded_settings[key] = default_value
+                    elif key in ['MAX_TEXT_PREVIEW_LINES', 'MAX_HEX_PREVIEW_BYTES', 'MAX_STRUCTURED_PREVIEW_LINES', 'MAX_PLUGIN_HISTORY_ENTRIES'] and loaded_settings[key] <= 0:
+                        loaded_settings[key] = default_value
+                return loaded_settings
+            except (json.JSONDecodeError, FileNotFoundError, Exception) as e:
+                # print(f"Error loading settings: {e}. Using default settings.")
+                return DEFAULT_APP_SETTINGS.copy()
+        return DEFAULT_APP_SETTINGS.copy()
+
+    def save_settings(self, settings):
+        """Saves current settings to file."""
+        try:
+            with open(APP_SETTINGS_FILE, 'w', encoding='utf-8') as f:
+                json.dump(settings, f, indent=4, ensure_ascii=False)
+            self.settings = settings.copy() # Update in-memory settings
+        except Exception as e:
+            # print(f"Error saving settings: {e}")
+            pass # Fail silently for now
+
+    def get_settings(self):
+        """Returns the current application settings."""
+        return self.settings.copy() # Return a copy to prevent external modification
+
+class SettingsDialog(QDialog):
+    """Dialog for managing application settings."""
+    settings_saved = Signal(dict)
+
+    def __init__(self, current_settings, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Application Settings"))
+        self.current_settings = current_settings.copy() # Work on a copy
+        self.setMinimumWidth(400)
+
+        self.layout = QVBoxLayout(self)
+        self.form_layout = QFormLayout()
+        self.layout.addLayout(self.form_layout)
+
+        self.widgets = {} # To store references to input widgets
+
+        # MAX_FILE_SIZE_FOR_FULL_READ
+        file_size_layout = QHBoxLayout()
+        self.file_size_spinbox = QDoubleSpinBox()
+        self.file_size_spinbox.setRange(0.0, 10000.0) # Up to 10000 GB
+        self.file_size_spinbox.setDecimals(2)
+        self.file_size_spinbox.setSingleStep(0.1)
+        self.file_size_unit_combo = QComboBox()
+        self.file_size_unit_combo.addItems(["Bytes", "KB", "MB", "GB"])
+        file_size_layout.addWidget(self.file_size_spinbox)
+        file_size_layout.addWidget(self.file_size_unit_combo)
+        self.form_layout.addRow(self.tr("Max File Size for Full Read:"), file_size_layout)
+        self.widgets['MAX_FILE_SIZE_FOR_FULL_READ'] = (self.file_size_spinbox, self.file_size_unit_combo)
+        self._set_file_size_display(self.current_settings['MAX_FILE_SIZE_FOR_FULL_READ'])
+
+        # Other integer settings
+        settings_fields = {
+            'MAX_TEXT_PREVIEW_LINES': self.tr("Max Text Preview Lines:"),
+            'MAX_HEX_PREVIEW_BYTES': self.tr("Max Hex Preview Bytes:"),
+            'MAX_STRUCTURED_PREVIEW_LINES': self.tr("Max Structured Preview Lines:"),
+            'MAX_PLUGIN_HISTORY_ENTRIES': self.tr("Max Plugin History Entries:")
+        }
+
+        for key, label_text in settings_fields.items():
+            spinbox = QSpinBox()
+            spinbox.setRange(1, 1000000000) # Ensure positive values, up to 1 billion
+            spinbox.setValue(self.current_settings.get(key, DEFAULT_APP_SETTINGS[key]))
+            self.form_layout.addRow(label_text, spinbox)
+            self.widgets[key] = spinbox
+
+        button_layout = QHBoxLayout()
+        save_button = QPushButton(self.tr("Save"))
+        save_button.clicked.connect(self._save_settings)
+        cancel_button = QPushButton(self.tr("Cancel"))
+        cancel_button.clicked.connect(self.reject)
+        button_layout.addStretch(1)
+        button_layout.addWidget(save_button)
+        button_layout.addWidget(cancel_button)
+        self.layout.addLayout(button_layout)
+
+    def _set_file_size_display(self, size_bytes):
+        """Converts bytes to human-readable and sets spinbox/combo."""
+        if size_bytes == 0:
+            self.file_size_spinbox.setValue(0)
+            self.file_size_unit_combo.setCurrentIndex(0) # Bytes
+            return
+
+        units = ["Bytes", "KB", "MB", "GB"]
+        unit_multipliers = [1, 1024, 1024**2, 1024**3]
+
+        best_unit_index = 0
+        for i, multiplier in enumerate(unit_multipliers):
+            if size_bytes >= multiplier:
+                best_unit_index = i
+            else:
+                break
+        
+        value_in_unit = size_bytes / unit_multipliers[best_unit_index]
+        self.file_size_spinbox.setValue(value_in_unit)
+        self.file_size_unit_combo.setCurrentIndex(best_unit_index)
+
+    def _get_file_size_from_display(self):
+        """Gets file size from spinbox/combo and converts to bytes."""
+        value = self.file_size_spinbox.value()
+        unit_index = self.file_size_unit_combo.currentIndex()
+        unit_multipliers = [1, 1024, 1024**2, 1024**3]
+        return int(value * unit_multipliers[unit_index])
+
+    def _save_settings(self):
+        new_settings = {}
+        try:
+            # File size
+            new_settings['MAX_FILE_SIZE_FOR_FULL_READ'] = self._get_file_size_from_display()
+            if new_settings['MAX_FILE_SIZE_FOR_FULL_READ'] < 0:
+                raise ValueError("Max File Size must be non-negative.")
+
+            # Other integer settings
+            for key in ['MAX_TEXT_PREVIEW_LINES', 'MAX_HEX_PREVIEW_BYTES', 'MAX_STRUCTURED_PREVIEW_LINES', 'MAX_PLUGIN_HISTORY_ENTRIES']:
+                value = self.widgets[key].value()
+                if value <= 0:
+                    raise ValueError(f"{self.tr(key.replace('_', ' ').title())} must be a positive number.")
+                new_settings[key] = value
+            
+            self.settings_saved.emit(new_settings)
+            self.accept()
+        except ValueError as e:
+            QMessageBox.warning(self, self.tr("Invalid Setting"), self.tr(str(e)))
+        except Exception as e:
+            QMessageBox.critical(self, self.tr("Error Saving Settings"), self.tr(f"An unexpected error occurred: {e}"))
+
 
 class ManagePluginsDialog(QDialog):
     """Dialog for managing plugins (load, delete, reload)."""
@@ -1679,6 +1783,7 @@ class JsonTableViewer(QWidget):
         self.stacked_widget.addWidget(self.text_view) # Index 1 for text
 
     def set_json_content(self, json_data):
+        # Corrected: Use self.table_view instead of self.table_widget
         self.table_view.clear()
         self.table_view.setRowCount(0)
         self.table_view.setColumnCount(0)
@@ -1702,6 +1807,7 @@ class JsonTableViewer(QWidget):
         self.text_view.verticalScrollBar().setValue(0) # Reset scroll for text view
 
     def _populate_table_from_list_of_dicts(self, data_list):
+        """Populates the internal table_view from a list of dictionaries (JSON array of objects)."""
         if not data_list:
             return
 
@@ -1713,6 +1819,7 @@ class JsonTableViewer(QWidget):
         # Sort keys for consistent column order
         sorted_keys = sorted(list(all_keys))
         
+        # Corrected: Use self.table_view instead of self.table_widget
         self.table_view.setColumnCount(len(sorted_keys))
         self.table_view.setHorizontalHeaderLabels(sorted_keys)
         self.table_view.setRowCount(len(data_list))
@@ -1720,22 +1827,265 @@ class JsonTableViewer(QWidget):
         for row_idx, row_dict in enumerate(data_list):
             for col_idx, key in enumerate(sorted_keys):
                 value = row_dict.get(key, "") # Get value, or empty string if key not present
+                # Corrected: Use self.table_view instead of self.table_widget
                 self.table_view.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
         
+        # Corrected: Use self.table_view instead of self.table_widget
         self.table_view.resizeColumnsToContents()
         self.table_view.horizontalHeader().setStretchLastSection(True)
 
     def _populate_table_from_single_dict(self, data_dict):
+        """Populates the internal table_view from a single dictionary (JSON object)."""
+        # Corrected: Use self.table_view instead of self.table_widget
         self.table_view.setColumnCount(2) # Key | Value
         self.table_view.setHorizontalHeaderLabels([self.tr("Key"), self.tr("Value")])
         self.table_view.setRowCount(len(data_dict))
 
         for row_idx, (key, value) in enumerate(data_dict.items()):
+            # Corrected: Use self.table_view instead of self.table_widget
             self.table_view.setItem(row_idx, 0, QTableWidgetItem(str(key)))
             self.table_view.setItem(row_idx, 1, QTableWidgetItem(str(value)))
         
+        # Corrected: Use self.table_view instead of self.table_widget
         self.table_view.resizeColumnsToContents()
         self.table_view.horizontalHeader().setStretchLastSection(True)
+
+
+# --- New Search Functionality ---
+
+class SearchWorker(QRunnable):
+    """
+    A QRunnable to perform text search in a separate thread.
+    Emits signals for completion.
+    """
+    finished = Signal(list, str, int) # Emits list of (start_pos, line_number), query, query_length
+
+    def __init__(self, text_content, query, parent=None):
+        super().__init__()
+        self.text_content = text_content
+        self.query = query
+        self.query_length = len(query)
+        self.signals = SearchWorkerSignals() # Use an internal QObject for signals
+
+    def run(self):
+        """Performs the search operation."""
+        matches = [] # Stores (start_pos, line_number)
+        if not self.query:
+            self.signals.finished.emit(matches, self.query, self.query_length)
+            return
+
+        text_lower = self.text_content.lower()
+        query_lower = self.query.lower()
+        
+        current_pos = 0
+        line_number = 1
+        
+        # Pre-calculate line start positions for efficient line number lookup
+        line_start_positions = [0]
+        for char in self.text_content:
+            if char == '\n':
+                line_start_positions.append(current_pos + 1)
+            current_pos += 1
+
+        current_pos = 0
+        while True:
+            idx = text_lower.find(query_lower, current_pos)
+            if idx == -1:
+                break
+            
+            # Find line number for the match
+            # This is a bit inefficient for very large files, but acceptable for typical text sizes.
+            # A more optimized approach would be to track line numbers during the find loop.
+            match_line_number = 1
+            for i in range(len(line_start_positions)):
+                if line_start_positions[i] > idx:
+                    match_line_number = i
+                    break
+                match_line_number = len(line_start_positions) # If match is on the last line
+
+            matches.append((idx, match_line_number))
+            current_pos = idx + self.query_length
+
+        self.signals.finished.emit(matches, self.query, self.query_length)
+
+class SearchWorkerSignals(QObject):
+    """Defines the signals available from a running worker thread."""
+    finished = Signal(list, str, int) # Emits list of (start_pos, line_number), query, query_length
+
+class SearchTab(QWidget):
+    """
+    A new tab for performing text search on the content of the TextTab.
+    Uses multi-threading for search operations.
+    """
+    highlight_requested = Signal(list, int, int) # Emits (matches_data, current_match_index, query_length)
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.setLayout(self.layout)
+
+        self.text_to_search = ""
+        self.search_matches = [] # Stores (start_pos, line_number)
+        self.current_match_index = -1
+        self.current_query = ""
+        self.current_query_length = 0
+
+        # Thread pool for search operations
+        self.thread_pool = QThreadPool.globalInstance()
+        self.thread_pool.setMaxThreadCount(1) # Only one search at a time
+
+        # Search Controls
+        search_control_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText(self.tr("Enter search query..."))
+        self.search_input.returnPressed.connect(self._start_search)
+        search_control_layout.addWidget(self.search_input)
+
+        self.search_button = QPushButton(self.tr("Search"))
+        self.search_button.clicked.connect(self._start_search)
+        search_control_layout.addWidget(self.search_button)
+
+        self.search_count_label = QLabel(self.tr("Matches: 0"))
+        search_control_layout.addWidget(self.search_count_label)
+
+        self.prev_match_button = QPushButton(self.tr("Previous"))
+        self.prev_match_button.clicked.connect(self._find_prev_match)
+        search_control_layout.addWidget(self.prev_match_button)
+
+        self.next_match_button = QPushButton(self.tr("Next"))
+        self.next_match_button.clicked.connect(self._find_next_match)
+        search_control_layout.addWidget(self.next_match_button)
+        self.layout.addLayout(search_control_layout)
+
+        # Search Results Display
+        self.results_list_widget = QListWidget()
+        self.results_list_widget.setFont(QFont("Monospace", 9))
+        self.results_list_widget.itemClicked.connect(self._on_result_item_clicked)
+        self.layout.addWidget(self.results_list_widget)
+
+    @Slot(str)
+    def set_text_content(self, text_content):
+        """Receives the text content from TextTab to perform searches on."""
+        self.text_to_search = text_content
+        self._clear_search_results()
+        # If there's an active query, re-run search on new content
+        if self.current_query:
+            self._start_search()
+
+    def _start_search(self):
+        query = self.search_input.text()
+        if not query:
+            self._clear_search_results()
+            return
+        
+        self.current_query = query
+        self.current_query_length = len(query)
+        self._clear_search_results() # Clear previous results before new search
+
+        self.search_button.setEnabled(False)
+        self.search_input.setEnabled(False)
+        self.prev_match_button.setEnabled(False)
+        self.next_match_button.setEnabled(False)
+        self.results_list_widget.clear()
+        self.results_list_widget.addItem(self.tr("Searching..."))
+
+        worker = SearchWorker(self.text_to_search, query)
+        worker.signals.finished.connect(self._on_search_finished)
+        self.thread_pool.start(worker)
+
+    @Slot(list, str, int)
+    def _on_search_finished(self, matches, query, query_length):
+        self.search_matches = matches
+        self.current_query = query
+        self.current_query_length = query_length
+
+        self.search_button.setEnabled(True)
+        self.search_input.setEnabled(True)
+        
+        self.results_list_widget.clear()
+        self.search_count_label.setText(self.tr(f"Matches: {len(self.search_matches)}"))
+
+        if not self.search_matches:
+            self.results_list_widget.addItem(self.tr("No matches found."))
+            self.current_match_index = -1
+            self.prev_match_button.setEnabled(False)
+            self.next_match_button.setEnabled(False)
+            self.highlight_requested.emit([], -1, 0) # Clear highlights in TextTab
+            return
+
+        # Populate results list with snippets
+        for i, (start_pos, line_num) in enumerate(self.search_matches):
+            # Get the line containing the match
+            line_start = self.text_to_search.rfind('\n', 0, start_pos) + 1
+            line_end = self.text_to_search.find('\n', start_pos)
+            if line_end == -1:
+                line_end = len(self.text_to_search)
+            
+            line_content = self.text_to_search[line_start:line_end].strip()
+            
+            # Create a snippet around the match
+            snippet_start = max(0, start_pos - line_start - 20) # 20 chars before
+            snippet_end = min(len(line_content), start_pos - line_start + query_length + 20) # 20 chars after
+            snippet = line_content[snippet_start:snippet_end]
+            
+            # Highlight the query in the snippet for display
+            highlighted_snippet = snippet.replace(query, f"<b>{query}</b>", 1) # Highlight first occurrence
+            
+            item_text = f"Line {line_num}: {highlighted_snippet}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, i) # Store the index of the match
+            self.results_list_widget.addItem(item)
+        
+        self.current_match_index = 0
+        self._update_match_navigation_buttons()
+        self.results_list_widget.setCurrentRow(self.current_match_index)
+        self._highlight_current_match_in_text_tab()
+
+    def _clear_search_results(self):
+        self.search_matches = []
+        self.current_match_index = -1
+        self.current_query = ""
+        self.current_query_length = 0
+        self.search_count_label.setText(self.tr("Matches: 0"))
+        self.results_list_widget.clear()
+        self.prev_match_button.setEnabled(False)
+        self.next_match_button.setEnabled(False)
+        self.highlight_requested.emit([], -1, 0) # Clear highlights in TextTab
+
+    def _update_match_navigation_buttons(self):
+        if len(self.search_matches) > 1:
+            self.prev_match_button.setEnabled(True)
+            self.next_match_button.setEnabled(True)
+        else:
+            self.prev_match_button.setEnabled(False)
+            self.next_match_button.setEnabled(False)
+
+    @Slot(QListWidgetItem)
+    def _on_result_item_clicked(self, item):
+        index = item.data(Qt.UserRole)
+        if index is not None:
+            self.current_match_index = index
+            self._highlight_current_match_in_text_tab()
+
+    def _find_prev_match(self):
+        if not self.search_matches:
+            return
+        self.current_match_index = (self.current_match_index - 1 + len(self.search_matches)) % len(self.search_matches)
+        self.results_list_widget.setCurrentRow(self.current_match_index)
+        self._highlight_current_match_in_text_tab()
+
+    def _find_next_match(self):
+        if not self.search_matches:
+            return
+        self.current_match_index = (self.current_match_index + 1) % len(self.search_matches)
+        self.results_list_widget.setCurrentRow(self.current_match_index)
+        self._highlight_current_match_in_text_tab()
+
+    def _highlight_current_match_in_text_tab(self):
+        if self.search_matches and self.current_match_index != -1:
+            self.highlight_requested.emit(self.search_matches, self.current_match_index, self.current_query_length)
+        else:
+            self.highlight_requested.emit([], -1, 0) # Clear highlights
 
 
 class InfoscavaMainWindow(QMainWindow):
@@ -1752,10 +2102,14 @@ class InfoscavaMainWindow(QMainWindow):
         self.file_watcher = QFileSystemWatcher(self)
         self.file_watcher.fileChanged.connect(self._on_file_changed)
 
+        # Initialize SettingsManager and load settings
+        self.settings_manager = SettingsManager(self)
+        self.app_settings = self.settings_manager.get_settings()
+
         self._setup_ui()
         # PluginManager is initialized BEFORE main_window is shown,
         # so it can load plugins from config and history.
-        self.plugin_manager = PluginManager(self) 
+        self.plugin_manager = PluginManager(self.app_settings['MAX_PLUGIN_HISTORY_ENTRIES'], self) 
         self.plugin_manager.set_plugin_history_tab(self.plugin_history_tab) # Pass history tab reference
         # Connect signal for initial static plugin tab creation
         self.plugin_manager.plugin_loaded_signal.connect(self._add_static_plugin_tab_if_applicable)
@@ -1764,11 +2118,17 @@ class InfoscavaMainWindow(QMainWindow):
         # New: Connect signal to re-analyze file when plugins change
         self.plugin_manager.reanalyze_requested.connect(self._reanalyze_current_file_if_loaded)
 
+        # Connect TextTab content changes to SearchTab
+        self.text_tab.text_content_changed.connect(self.search_tab.set_text_content)
+        # Connect SearchTab highlight requests to TextTab
+        self.search_tab.highlight_requested.connect(self.text_tab.highlight_matches)
 
         self._setup_menu_bar()
         self._setup_status_bar()
         self._setup_drag_and_drop()
         self._load_theme_settings() # Load theme settings at startup
+        self._update_ui_with_settings() # Apply initial settings to UI elements
+        
 
         if initial_filepath:
             self._load_file(initial_filepath)
@@ -1828,6 +2188,9 @@ class InfoscavaMainWindow(QMainWindow):
 
         self.text_tab = TextTab()
         self.tab_widget.addTab(self.text_tab, self.tr("Text"))
+
+        self.search_tab = SearchTab() # New Search Tab
+        self.tab_widget.addTab(self.search_tab, self.tr("Search"))
 
         self.hex_tab = HexView()
         self.tab_widget.addTab(self.hex_tab, self.tr("Hex View"))
@@ -1892,6 +2255,13 @@ class InfoscavaMainWindow(QMainWindow):
         self.theme_toggle_action.setShortcut(QKeySequence("Ctrl+T"))
         self.theme_toggle_action.triggered.connect(self._toggle_theme)
         view_menu.addAction(self.theme_toggle_action)
+
+        # --- Settings Menu ---
+        settings_menu = menu_bar.addMenu(self.tr("&Settings"))
+        app_settings_action = QAction(self.tr("&Application Settings..."), self)
+        app_settings_action.triggered.connect(self._show_settings_dialog)
+        settings_menu.addAction(app_settings_action)
+        # --- End Settings Menu ---
 
         # --- Plugins Menu ---
         plugins_menu = menu_bar.addMenu(self.tr("&Plugins"))
@@ -1991,7 +2361,8 @@ class InfoscavaMainWindow(QMainWindow):
             self.analysis_thread.quit()
             self.analysis_thread.wait()
 
-        self.analysis_thread = FileAnalyzerThread(filepath, self)
+        # Pass the current MAX_FILE_SIZE_FOR_FULL_READ from settings
+        self.analysis_thread = FileAnalyzerThread(filepath, self.app_settings['MAX_FILE_SIZE_FOR_FULL_READ'], self)
         self.analysis_thread.finished.connect(self._on_analysis_finished)
         self.analysis_thread.error.connect(self._on_analysis_error)
         self.analysis_thread.progress.connect(self._on_analysis_progress)
@@ -2005,11 +2376,11 @@ class InfoscavaMainWindow(QMainWindow):
         self.file_metadata = results
         self.metadata_tab.update_metadata(results)
 
-        is_large_file = results.get('size', 0) > MAX_FILE_SIZE_FOR_FULL_READ
+        is_large_file = results.get('size', 0) > self.app_settings['MAX_FILE_SIZE_FOR_FULL_READ']
 
-        self.text_tab.set_file_content(self.file_content_bytes, results.get('encoding'), is_large_file)
-        self.hex_tab.set_file_content(self.file_content_bytes, is_large_file)
-        self.structured_tab.set_file_content(self.file_content_bytes, results.get('mime_type'), results.get('encoding'), is_large_file)
+        self.text_tab.set_file_content(self.file_content_bytes, results.get('encoding'), is_large_file, self.app_settings['MAX_TEXT_PREVIEW_LINES'])
+        self.hex_tab.set_file_content(self.file_content_bytes, is_large_file, self.app_settings['MAX_HEX_PREVIEW_BYTES'])
+        self.structured_tab.set_file_content(self.file_content_bytes, results.get('mime_type'), results.get('encoding'), is_large_file, self.app_settings['MAX_STRUCTURED_PREVIEW_LINES'])
         self.base64_tab.set_file_content(self.file_content_bytes)
         self.entropy_tab.update_entropy(results.get('entropy'))
         self.byte_histogram_tab.plot_histogram(self.file_content_bytes)
@@ -2034,18 +2405,30 @@ class InfoscavaMainWindow(QMainWindow):
 
             # Handle display based on output type
             if isinstance(result, dict) and result.get("infoscava_output_type") == "html":
-                html_content = str(result.get("content", "")) # Ensure content is a string
+                html_content = result.get("content")
                 plugin_output_tab = QTextBrowser() # Use QTextBrowser for HTML rendering
-                plugin_output_tab.setHtml(html_content)
                 plugin_output_tab.setReadOnly(True)
                 plugin_output_tab.setOpenExternalLinks(True)
-                index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title} (HTML)"))
-                self.analysis_plugin_tabs[plugin_name] = index
+
+                if isinstance(html_content, str):
+                    if not html_content.strip(): # Check if content is empty or just whitespace
+                        plugin_output_tab.setPlainText(self.tr(f"Plugin '{plugin_name}' returned empty HTML content."))
+                        index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title} (HTML - Empty)"))
+                    else:
+                        plugin_output_tab.setHtml(html_content)
+                        index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title} (HTML)"))
+                else:
+                    # If the plugin specified HTML output but didn't return a string, display an error.
+                    plugin_output_tab.setPlainText(self.tr(f"Plugin '{plugin_name}' returned HTML output type, but the content was not a string. Type: {type(html_content)}"))
+                    index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title} (HTML Error)"))
+                # Store the widget directly, not its index
+                self.analysis_plugin_tabs[plugin_name] = plugin_output_tab 
             elif isinstance(result, (dict, list)): # Handle JSON output
                 plugin_output_tab = JsonTableViewer() # Use the new JsonTableViewer
                 plugin_output_tab.set_json_content(result)
                 index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title} (JSON)"))
-                self.analysis_plugin_tabs[plugin_name] = index
+                # Store the widget directly, not its index
+                self.analysis_plugin_tabs[plugin_name] = plugin_output_tab
             else:
                 # Existing logic for other text/str output
                 plugin_output_tab = QTextEdit()
@@ -2053,7 +2436,8 @@ class InfoscavaMainWindow(QMainWindow):
                 plugin_output_tab.setFont(QFont("Monospace", 9))
                 plugin_output_tab.setPlainText(str(result))
                 index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title}"))
-                self.analysis_plugin_tabs[plugin_name] = index
+                # Store the widget directly, not its index
+                self.analysis_plugin_tabs[plugin_name] = plugin_output_tab
         # --- End Execute Analysis Plugins ---
 
         self.progress_bar.hide()
@@ -2086,9 +2470,10 @@ class InfoscavaMainWindow(QMainWindow):
 
     def _clear_all_tabs_content(self):
         self.metadata_tab.update_metadata({})
-        self.text_tab.set_file_content(b"")
-        self.hex_tab.set_file_content(b"")
-        self.structured_tab.set_file_content(b"", "")
+        self.text_tab.set_file_content(b"", max_text_preview_lines=self.app_settings['MAX_TEXT_PREVIEW_LINES'])
+        self.search_tab.set_text_content("") # Clear search tab content
+        self.hex_tab.set_file_content(b"", max_hex_preview_bytes=self.app_settings['MAX_HEX_PREVIEW_BYTES'])
+        self.structured_tab.set_file_content(b"", "", max_structured_preview_lines=self.app_settings['MAX_STRUCTURED_PREVIEW_LINES'])
         self.image_metadata_tab.update_image_data("", {})
         self.base64_tab.set_file_content(b"")
         self.entropy_tab.update_entropy("N/A")
@@ -2097,12 +2482,13 @@ class InfoscavaMainWindow(QMainWindow):
 
     def _clear_analysis_plugin_tabs(self):
         """Removes all dynamically added analysis plugin tabs."""
-        # Iterate in reverse to avoid index issues when removing
+        # Iterate over a copy of the keys to avoid issues when deleting items
         for plugin_name in list(self.analysis_plugin_tabs.keys()):
-            index = self.analysis_plugin_tabs[plugin_name]
-            widget = self.tab_widget.widget(index)
-            self.tab_widget.removeTab(index)
-            widget.deleteLater() # Ensure widget is properly deleted
+            widget = self.analysis_plugin_tabs[plugin_name]
+            index = self.tab_widget.indexOf(widget) # Get current index of the widget
+            if index != -1: # Ensure the widget is still in the tab widget
+                self.tab_widget.removeTab(index)
+                widget.deleteLater() # Ensure widget is properly deleted
             del self.analysis_plugin_tabs[plugin_name]
 
     @Slot(str)
@@ -2110,25 +2496,56 @@ class InfoscavaMainWindow(QMainWindow):
         """Removes a plugin's tab from the QTabWidget."""
         # Check analysis plugin tabs
         if plugin_name in self.analysis_plugin_tabs:
-            index = self.analysis_plugin_tabs[plugin_name]
-            widget = self.tab_widget.widget(index)
-            self.tab_widget.removeTab(index)
-            widget.deleteLater()
+            widget = self.analysis_plugin_tabs[plugin_name]
+            index = self.tab_widget.indexOf(widget)
+            if index != -1: # Add check for None
+                self.tab_widget.removeTab(index)
+                widget.deleteLater()
             del self.analysis_plugin_tabs[plugin_name]
-            self.plugin_manager._log(self.tr(f"Removed analysis plugin tab for: {plugin_name}"))
             return
 
         # Check static plugin tabs
-        # Since static_plugin_tabs stores widgets, we need to find the index
         for name, widget in list(self.static_plugin_tabs.items()):
             if name == plugin_name:
                 index = self.tab_widget.indexOf(widget)
                 if index != -1:
-                    self.tab_widget.removeTab(index)
-                    widget.deleteLater()
+                    widget_to_remove = self.tab_widget.widget(index)
+                    if widget_to_remove: # Add check for None
+                        self.tab_widget.removeTab(index)
+                        widget_to_remove.deleteLater()
                     del self.static_plugin_tabs[name]
-                    self.plugin_manager._log(self.tr(f"Removed static HTML plugin tab for: {plugin_name}"))
                     return
+
+    @Slot(str)
+    def _add_static_plugin_tab_if_applicable(self, plugin_name):
+        """
+        Adds a tab for a static HTML plugin if it's not already added.
+        This is connected to plugin_manager.plugin_loaded_signal.
+        """
+        if plugin_name in self.static_plugin_tabs:
+            return # Already added
+
+        plugin_info = self.plugin_manager.loaded_plugins.get(plugin_name)
+        if plugin_info and plugin_info['type'] == 'static_html_plugin':
+            try:
+                # Execute the plugin function to get the HTML content
+                html_content = plugin_info['function']()
+                
+                if isinstance(html_content, str):
+                    plugin_output_tab = QTextBrowser()
+                    plugin_output_tab.setReadOnly(True)
+                    plugin_output_tab.setOpenExternalLinks(True)
+                    plugin_output_tab.setHtml(html_content)
+                    
+                    tab_title = plugin_info.get('tab_title', plugin_name)
+                    index = self.tab_widget.addTab(plugin_output_tab, self.tr(f"Plugin: {tab_title}"))
+                    self.static_plugin_tabs[plugin_name] = plugin_output_tab # Store the widget itself
+                    self.plugin_manager._log(self.tr(f"Created static HTML tab for plugin: {plugin_name}"))
+                else:
+                    self.plugin_manager._log(self.tr(f"Static HTML plugin '{plugin_name}' did not return a string. Tab not created."))
+            except Exception as e:
+                error_details = traceback.format_exc()
+                self.plugin_manager._log(self.tr(f"Error creating static tab for plugin '{plugin_name}': {e}\nDetails:\n{error_details}"))
 
 
     def _on_file_tree_clicked(self, index):
@@ -2159,10 +2576,8 @@ class InfoscavaMainWindow(QMainWindow):
         Called when plugin configuration changes (load, delete, reload).
         """
         if self.current_filepath and os.path.exists(self.current_filepath):
-            self.plugin_manager._log(self.tr(f"Plugin configuration changed. Re-analyzing '{os.path.basename(self.current_filepath)}'."))
             self._load_file(self.current_filepath) # Re-load and re-analyze
         else:
-            self.plugin_manager._log(self.tr("Plugin configuration changed, but no file is loaded or file deleted. Clearing UI."))
             self._clear_all() # Just clear the UI if no file to re-analyze
 
 
@@ -2219,7 +2634,7 @@ class InfoscavaMainWindow(QMainWindow):
                                 f.write(f"  Content:\n{str(plugin_output)}\n\n")
 
                     f.write("\n--- Text Content (Preview) ---\n\n")
-                    f.write(self.text_tab.text_editor.toPlainText()[:MAX_TEXT_PREVIEW_LINES * 2])
+                    f.write(self.text_tab.text_editor.toPlainText()[:self.app_settings['MAX_TEXT_PREVIEW_LINES'] * 2])
             elif filename.endswith('.html'):
                 html_content = self._generate_html_report()
                 with open(filename, 'w', encoding='utf-8') as f:
@@ -2304,7 +2719,7 @@ class InfoscavaMainWindow(QMainWindow):
             report_html += f"""
             <div class="section">
                 <h2>{self.tr("Text Content (Preview)")}</h2>
-                <pre>{self.text_tab.text_editor.toPlainText()[:MAX_TEXT_PREVIEW_LINES * 2]}</pre>
+                <pre>{self.text_tab.text_editor.toPlainText()[:self.app_settings['MAX_TEXT_PREVIEW_LINES'] * 2]}</pre>
             </div>
             """
 
@@ -2312,7 +2727,7 @@ class InfoscavaMainWindow(QMainWindow):
             report_html += f"""
             <div class="section">
                 <h2>{self.tr("Hexadecimal View (Preview)")}</h2>
-                <pre>{self.hex_tab.hex_editor.toPlainText()[:MAX_HEX_PREVIEW_BYTES * 4]}</pre>
+                <pre>{self.hex_tab.hex_editor.toPlainText()[:self.app_settings['MAX_HEX_PREVIEW_BYTES'] * 4]}</pre>
             </div>
             """
 
@@ -2348,7 +2763,7 @@ class InfoscavaMainWindow(QMainWindow):
                 report_html += f"""
                 <div class="section">
                     <h2>{self.tr("Structured View (Preview)")}</h2>
-                    <pre>{current_structured_content[:MAX_STRUCTURED_PREVIEW_LINES * 2]}</pre>
+                    <pre>{current_structured_content[:self.app_settings['MAX_STRUCTURED_PREVIEW_LINES'] * 2]}</pre>
                 </div>
                 """
 
@@ -2370,7 +2785,7 @@ class InfoscavaMainWindow(QMainWindow):
         QMessageBox.about(self, self.tr("About Infoscava"),
                           self.tr("<h3>Infoscava</h3>"
                                   "<p>Universal File Analyzer</p>"
-                                  "<p>Version: 1.4.5</p>"
+                                  "<p>Version: 2.1.9</p>"
                                   "<p>Developer: Muhammed Shafin P (GitHub: <a href='https://github.com/hejhdiss'>hejhdiss</a>)</p>"
                                   "<p>Infoscava (Info + Scava, Latin for 'dig') is designed to excavate information from any file type.</p>"))
 
@@ -2384,7 +2799,7 @@ class InfoscavaMainWindow(QMainWindow):
             with open(THEME_SETTINGS_FILE, 'w') as f:
                 json.dump({'theme': theme_name}, f)
         except Exception as e:
-            print(f"Warning: Could not save theme preference: {e}")
+            pass # Removed logging
 
     def _load_theme_preference(self):
         """Loads the last saved theme preference from a file."""
@@ -2394,9 +2809,16 @@ class InfoscavaMainWindow(QMainWindow):
                     settings = json.load(f)
                     return settings.get('theme', 'dark') # Default to 'dark' if not found
         except Exception as e:
-            print(f"Warning: Could not load theme preference: {e}")
+            pass # Removed logging
         return 'dark' # Default to dark theme if file doesn't exist or error occurs
 
+    def _toggle_theme(self):
+        """Toggles between dark and light themes."""
+        current_theme = self._load_theme_preference()
+        if current_theme == 'dark':
+            self._set_light_theme()
+        else:
+            self._set_dark_theme()
     def _set_dark_theme(self):
         app = QApplication.instance()
         palette = app.palette()
@@ -2414,203 +2836,194 @@ class InfoscavaMainWindow(QMainWindow):
         palette.setColor(QPalette.Highlight, QColor("#007acc"))
         palette.setColor(QPalette.HighlightedText, QColor("#ffffff"))
         app.setPalette(palette)
-        # Clear any specific stylesheet overrides for dark theme
-        QApplication.instance().setStyleSheet("")
+
+        QApplication.instance().setStyleSheet("""
+            /* Reset QTreeView::branch styling to allow native indicators */
+            QTreeView::branch {{
+                border: none;
+                background: transparent;
+                padding: 0;
+                margin: 0;
+                width: 16px; /* Explicit width to ensure space for indicator */
+                height: 16px; /* Explicit height to ensure space for indicator */
+            }}
+            /* General QTreeView styling for visibility */
+            QTreeView {{
+                background-color: #2d2d30; /* Dark background */
+                color: #ffffff; /* White text */
+                alternate-background-color: #3c3c3c;
+                border: 1px solid #555555;
+            }}
+            QTreeView::item {{
+                color: #ffffff;
+            }}
+            QTreeView::item:selected {{
+                background-color: #007acc;
+                color: #ffffff;
+            }}
+        """)
         self.status_bar.showMessage(self.tr("Switched to Dark Theme"), 3000)
         self._save_theme_preference('dark')
+    
 
     def _set_light_theme(self):
         app = QApplication.instance()
         palette = app.palette()
-        palette.setColor(QPalette.Window, QColor("#f0f0f0"))
-        palette.setColor(QPalette.WindowText, QColor("#1e1e1e"))
-        palette.setColor(QPalette.Base, QColor("#ffffff"))
-        palette.setColor(QPalette.AlternateBase, QColor("#e0e0e0"))
+        # Refined light theme colors for a production-level look
+        palette.setColor(QPalette.Window, QColor("#f8f8f8")) # Main window background - soft white
+        palette.setColor(QPalette.WindowText, QColor("#1e1e1e")) # Dark text for readability
+        palette.setColor(QPalette.Base, QColor("#ffffff")) # Base for input fields, text areas - pure white for content
+        palette.setColor(QPalette.AlternateBase, QColor("#f0f0f0")) # Alternate row colors in lists/tables
         palette.setColor(QPalette.ToolTipBase, QColor("#ffffff"))
         palette.setColor(QPalette.ToolTipText, QColor("#1e1e1e"))
         palette.setColor(QPalette.Text, QColor("#1e1e1e"))
-        palette.setColor(QPalette.Button, QColor("#e0e0e0")) # Slightly darker button for contrast
+        palette.setColor(QPalette.Button, QColor("#e8e8e8")) # Light gray button background
         palette.setColor(QPalette.ButtonText, QColor("#1e1e1e"))
-        palette.setColor(QPalette.BrightText, QColor("red"))
-        palette.setColor(QPalette.Link, QColor("#0000ff"))
-        palette.setColor(QPalette.Highlight, QColor("#aaddff"))
-        palette.setColor(QPalette.HighlightedText, QColor("#1e1e1e"))
+        palette.setColor(QPalette.BrightText, QColor("red")) # Standard bright text color
+        palette.setColor(QPalette.Link, QColor("#007bff")) # Standard blue for links
+        palette.setColor(QPalette.Highlight, QColor("#aaddff")) # Light blue for selection highlight
+        palette.setColor(QPalette.HighlightedText, QColor("#1e1e1e")) # Dark text on highlight
         app.setPalette(palette)
-        
-        # Apply comprehensive stylesheet overrides for light theme to ensure readability
-        QApplication.instance().setStyleSheet("""
-            QMainWindow, QWidget, QSplitter {
-                background-color: #f0f0f0;
+
+        # Apply comprehensive stylesheet overrides for light theme to ensure readability and consistent look
+        QApplication.instance().setStyleSheet(f"""
+            QMainWindow, QWidget, QSplitter {{
+                background-color: #f8f8f8; /* Soft white for main window background */
+                color: #1e1e1e; /* Dark text */
+            }}
+            QMenuBar {{
+                background-color: #e8e8e8; /* Slightly darker than main window for distinction */
                 color: #1e1e1e;
-            }
-            QMenuBar {
-                background-color: #e0e0e0; /* Lighter background for menu bar */
-                color: #1e1e1e; /* Dark text for menu bar */
-            }
-            QMenuBar::item {
+                border-bottom: 1px solid #d8d8d8; /* Subtle border */
+            }}
+            QMenuBar::item {{
                 background-color: transparent;
                 color: #1e1e1e;
-            }
-            QMenuBar::item:selected {
-                background-color: #c0c0c0; /* Highlight on hover */
-            }
-            QMenu {
-                background-color: #f8f8f8; /* Lighter background for dropdown menus */
+                padding: 5px 10px;
+            }}
+            QMenuBar::item:selected {{
+                background-color: #d0d0d0; /* Highlight on hover */
+            }}
+            QMenu {{
+                background-color: #ffffff; /* Pure white for dropdown menus */
                 color: #1e1e1e;
-                border: 1px solid #d0d0d0;
-            }
-            QMenu::item:selected {
+                border: 1px solid #d8d8d8;
+                border-radius: 4px;
+            }}
+            QMenu::item {{
+                padding: 6px 20px 6px 10px; /* Padding for menu items */
+            }}
+            QMenu::item:selected {{
                 background-color: #aaddff;
                 color: #1e1e1e;
-            }
-            QTextEdit, QTextBrowser {
+            }}
+            QTextEdit, QTextBrowser {{
+                background-color: #ffffff; /* Pure white for text content areas */
+                color: #1e1e1e;
+                border: 1px solid #d8d8d8;
+                border-radius: 4px;
+                padding: 5px;
+            }}
+            QComboBox {{
                 background-color: #ffffff;
                 color: #1e1e1e;
-            }
-            QComboBox {
-                background-color: #ffffff;
-                color: #1e1e1e;
+                border: 1px solid #d8d8d8;
+                border-radius: 4px;
+                padding: 2px 5px;
                 selection-background-color: #aaddff;
                 selection-color: #1e1e1e;
-            }
-            QLineEdit {
+            }}
+            QLineEdit {{
                 background-color: #ffffff;
                 color: #1e1e1e;
-            }
-            QLabel {
-                color: #1e1e1e;
-            }
-            QPushButton {
-                background-color: #e0e0e0;
-                color: #1e1e1e;
-                border: 1px solid #c0c0c0;
+                border: 1px solid #d8d8d8;
                 border-radius: 4px;
-                padding: 5px 10px;
-            }
-            QPushButton:hover {
-                background-color: #d0d0d0;
-            }
-            QTreeView {
-                background-color: #ffffff;
+                padding: 2px 5px;
+            }}
+            QLabel {{
                 color: #1e1e1e;
-                alternate-background-color: #f5f5f5;
-                border: 1px solid #d0d0d0;
-            }
-            QTreeView::item {
+            }}
+            QPushButton {{
+                background-color: #e8e8e8;
                 color: #1e1e1e;
-            }
-            QTreeView::item:selected {
+                border: 1px solid #c8c8c8; /* Slightly darker border for buttons */
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: 500;
+            }}
+            QPushButton:hover {{
+                background-color: #d8d8d8;
+                border-color: #b8b8b8;
+            }}
+            QPushButton:pressed {{
+                background-color: #c8c8c8;
+                border-color: #a8a8a8;
+            }}
+            QTreeView {{
+                background-color: #f5f5f5; /* Very subtle darker white for QTreeView background */
+                color: #1e1e1e;
+                alternate-background-color: #f0f0f0; /* Clearer alternate row color */
+                border: 1px solid #d8d8d8;
+                border-radius: 4px;
+            }}
+            QTreeView::item {{
+                color: #1e1e1e;
+                padding: 3px 0; /* Add some vertical padding to items */
+            }}
+            QTreeView::item:selected {{
                 background-color: #aaddff;
                 color: #1e1e1e;
-            }
-            QTreeView::branch:selected {
+            }}
+            QTreeView::branch:selected {{
                 background-color: #aaddff; /* Ensure branches also highlight correctly */
-            }
-            QTreeView::branch:open:has-children {
-                image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAJ0lEQVQYlWNgYGD4TwW/oYlBTAz/g4GBYQYg/wPjEwMDAxMgBgBw7wJc20g/JAAAAABJRU5ErkJggg==); /* Example: small open triangle for light theme */
-            }
-            QTreeView::branch:closed:has-children {
-                image: url(data:image/png;base64,iVBORw0KGgoAAAAKCAYAAACNMs+9AAAAJ0lEQVQYlWNgoD/gPxD+B8Q/wPjEwMDAxMgBgBw7wJc20g/JAAAAABJRU5ErkJggg==); /* Example: small closed triangle for light theme */
-            }
-            QStatusBar {
+            }}
+            /* Removed specific QTreeView::branch styling to allow native indicators */
+            QStatusBar {{
+                background-color: #e8e8e8;
+                color: #1e1e1e;
+                border-top: 1px solid #d8d8d8;
+            }}
+            QProgressBar {{
                 background-color: #e0e0e0;
                 color: #1e1e1e;
-            }
-            QProgressBar {
-                background-color: #c0c0c0;
-                color: #1e1e1e;
-                border: 1px solid #a0a0a0;
+                border: 1px solid #c0c0c0;
                 border-radius: 5px;
                 text-align: center;
-            }
-            QProgressBar::chunk {
+            }}
+            QProgressBar::chunk {{
                 background-color: #007bff;
                 border-radius: 5px;
-            }
-            /* QTabWidget and QTabBar styling for better separation in light theme */
-            QTabWidget::pane { /* The content area below the tabs */
-                border: 1px solid #c0c0c0;
-                background-color: #ffffff;
-                border-radius: 5px;
-            }
-            QTabBar::tab {
-                background: #e0e0e0; /* Light grey for inactive tabs */
-                border: 1px solid #c0c0c0;
-                border-bottom-color: #c0c0c0; /* Same as pane border */
+            }}
+            QTabWidget::pane {{ /* The content area below the tabs */
+                border: 1px solid #d8d8d8;
+                background-color: #f8f8f8; /* Matches main window background */
+                border-radius: 4px;
+                margin-top: -1px; /* Overlap with tab bar border */
+            }}
+            QTabBar::tab {{
+                background: #e5e5e5; /* Light grey for inactive tabs */
+                border: 1px solid #d8d8d8;
+                border-bottom-color: #d8d8d8; /* Same as pane border */
                 border-top-left-radius: 4px;
                 border-top-right-radius: 4px;
                 padding: 8px 15px;
                 margin-right: 2px;
-                color: #1e1e1e; /* Dark text */
-            }
-            QTabBar::tab:selected {
-                background: #ffffff; /* White for selected tab */
-                border-bottom-color: #ffffff; /* Make selected tab's bottom border blend with pane */
+                color: #1e1e1e;
+            }}
+            QTabBar::tab:selected {{
+                background: #f8f8f8; /* Matches main window background */
+                border-bottom-color: #f8f8f8; /* Make selected tab's bottom border blend with pane */
                 font-weight: bold;
-            }
-            QTabBar::tab:hover:!selected {
-                background: #d0d0d0; /* Slightly darker grey on hover for inactive tabs */
-            }
+            }}
+            QTabBar::tab:hover:!selected {{
+                background: #d8d8d8; /* Slightly darker grey on hover for inactive tabs */
+            }}
         """)
         self.status_bar.showMessage(self.tr("Switched to Light Theme"), 3000)
         self._save_theme_preference('light')
 
-    def _toggle_theme(self):
-        app = QApplication.instance()
-        # Determine current theme based on window background color
-        # Using a reliable indicator like the main window's background color
-        if app.palette().color(QPalette.Window).name() == "#1e1e1e":
-            self._set_light_theme()
-        else:
-            self._set_dark_theme()
 
-    def _load_theme_settings(self):
-        """Loads the theme preference and applies it at startup."""
-        preferred_theme = self._load_theme_preference()
-        if preferred_theme == 'light':
-            self._set_light_theme()
-        else:
-            self._set_dark_theme() # Default to dark if no preference or 'dark'
 
-    def _show_manage_plugins_dialog(self):
-        """Shows the plugin management dialog."""
-        dialog = ManagePluginsDialog(self.plugin_manager, self)
-        dialog.exec()
-
-    @Slot(str)
-    def _add_static_plugin_tab_if_applicable(self, plugin_name):
-        """
-        Adds a new tab for a static_html_plugin if it's loaded at startup.
-        This slot is connected to plugin_manager.plugin_loaded_signal.
-        """
-        plugin_data = self.plugin_manager.loaded_plugins.get(plugin_name)
-        if plugin_data and plugin_data['type'] == 'static_html_plugin':
-            # Check if tab already exists to prevent duplicates on reload
-            if plugin_name in self.static_plugin_tabs:
-                # If it exists, remove and re-add to ensure fresh content.
-                index_to_remove = self.tab_widget.indexOf(self.static_plugin_tabs[plugin_name])
-                if index_to_remove != -1: # Ensure the tab still exists before trying to remove
-                    widget_to_remove = self.tab_widget.widget(index_to_remove)
-                    self.tab_widget.removeTab(index_to_remove)
-                    widget_to_remove.deleteLater()
-                del self.static_plugin_tabs[plugin_name]
-
-            try:
-                html_content = plugin_data['function']() # Call the plugin function without file content
-                if isinstance(html_content, str):
-                    html_viewer = QTextBrowser()
-                    html_viewer.setHtml(html_content)
-                    html_viewer.setReadOnly(True)
-                    html_viewer.setOpenExternalLinks(True)
-                    tab_title = plugin_data.get('tab_title', plugin_name)
-                    index = self.tab_widget.addTab(html_viewer, tab_title)
-                    self.static_plugin_tabs[plugin_name] = html_viewer # Store widget reference, not just index
-                    self.plugin_manager._log(self.tr(f"Created static HTML tab for plugin: {plugin_name}"))
-                else:
-                    self.plugin_manager._log(self.tr(f"Static HTML plugin '{plugin_name}' did not return a string. Tab not created."))
-            except Exception as e:
-                error_details = traceback.format_exc()
-                self.plugin_manager._log(self.tr(f"Error creating static tab for plugin '{plugin_name}': {e}\nDetails:\n{error_details}"))
 
 
     def closeEvent(self, event):
@@ -2618,6 +3031,67 @@ class InfoscavaMainWindow(QMainWindow):
         self.plugin_manager._save_history()
         super().closeEvent(event)
 
+    def _show_manage_plugins_dialog(self):
+        """Shows the dialog for managing plugins."""
+        dialog = ManagePluginsDialog(self.plugin_manager, self)
+        dialog.exec()
+
+    def _show_settings_dialog(self):
+        """Shows the application settings dialog."""
+        dialog = SettingsDialog(self.app_settings, self)
+        dialog.settings_saved.connect(self._apply_settings)
+        dialog.exec()
+
+    @Slot(dict)
+    def _apply_settings(self, new_settings):
+        """Applies new settings to the application and saves them."""
+        self.app_settings = new_settings
+        self.settings_manager.save_settings(self.app_settings)
+        self._update_ui_with_settings()
+        # If file size limits changed, re-analyze the current file to apply new limits
+        if self.current_filepath and os.path.exists(self.current_filepath):
+            self._load_file(self.current_filepath)
+        else:
+            # If no file is loaded, clear existing content previews to reflect new limits
+            self._clear_all_tabs_content()
+        QMessageBox.information(self, self.tr("Settings Saved"), self.tr("Application settings updated successfully."))
+
+    def _update_ui_with_settings(self):
+        """Propagates current settings to relevant UI components."""
+        self.text_tab.max_text_preview_lines = self.app_settings['MAX_TEXT_PREVIEW_LINES']
+        self.hex_tab.max_hex_preview_bytes = self.app_settings['MAX_HEX_PREVIEW_BYTES']
+        self.structured_tab.max_structured_preview_lines = self.app_settings['MAX_STRUCTURED_PREVIEW_LINES']
+        self.plugin_manager.update_settings(self.app_settings['MAX_PLUGIN_HISTORY_ENTRIES'])
+
+        # Re-render current content with new preview limits if a file is loaded
+        if self.current_filepath and os.path.exists(self.current_filepath):
+            # Re-read file content to ensure it's fresh if needed, then update tabs
+            try:
+                with open(self.current_filepath, 'rb') as f:
+                    self.file_content_bytes = f.read()
+                # Pass is_large_file based on new setting
+                is_large_file = os.path.getsize(self.current_filepath) > self.app_settings['MAX_FILE_SIZE_FOR_FULL_READ']
+                
+                # Update content in tabs with new limits
+                self.text_tab.set_file_content(self.file_content_bytes, self.file_metadata.get('encoding'), is_large_file, self.app_settings['MAX_TEXT_PREVIEW_LINES'])
+                self.hex_tab.set_file_content(self.file_content_bytes, is_large_file, self.app_settings['MAX_HEX_PREVIEW_BYTES'])
+                self.structured_tab.set_file_content(self.file_content_bytes, self.file_metadata.get('mime_type'), self.file_metadata.get('encoding'), is_large_file, self.app_settings['MAX_STRUCTURED_PREVIEW_LINES'])
+            except Exception as e:
+                # Handle potential errors during re-reading file
+                self.status_bar.showMessage(self.tr(f"Error re-applying settings to current file: {e}"), 5000)
+        else:
+            # If no file is loaded, just clear the previews to reflect the new limits
+            self._clear_all_tabs_content()
+
+
+    def _load_theme_settings(self):
+        """Loads the saved theme preference and applies it at startup."""
+        theme_name = self._load_theme_preference()
+        if theme_name == 'dark':
+            self._set_dark_theme()
+        else:
+            self._set_light_theme()
+# Assuming these Base64 strings are defined elsewhere, e.g., in your main app
 
 def main():
     parser = argparse.ArgumentParser(description="Infoscava - Universal File Analyzer")
@@ -2633,7 +3107,7 @@ def main():
         if translator.load(locale, "infoscava", "_", ":/translations"):
             app.installTranslator(translator)
         else:
-            print(f"Warning: Could not load translation for language '{args.lang}'")
+            pass # Removed logging
 
     main_window = InfoscavaMainWindow(initial_filepath=args.file)
     main_window.show()
@@ -2641,4 +3115,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

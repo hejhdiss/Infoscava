@@ -2,12 +2,12 @@
 
 [Setup]
 AppName={#AppName}
-AppVersion=1.4.5
+AppVersion=2.1.9
 AppPublisher=Muhammed Shafin P
 AppPublisherURL=https://github.com/hejhdiss
 AppSupportURL=https://github.com/hejhdiss/Infoscava/issues
 AppUpdatesURL=https://github.com/hejhdiss/Infoscava/releases
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={localappdata}\Programs\{#AppName}
 DisableDirPage=no
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
