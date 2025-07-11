@@ -17,7 +17,7 @@
 - **Standard Installer:** User-friendly installation.
 - **Right-Click Context Menu:** "Open with Infoscava" integration.
 - **Security Enhancements:** Basic security checks to prevent loading files from sensitive system directories.
-- **Additional Search Tab** with multi-match highlighting, match navigation, and live results.
+- **Additional Search Tab:** with multi-match highlighting, match navigation, and live results.
 - **UI Bug Fix**: Patched issue where the Light (White) Theme was not applied correctly to the QTreeView file browser.
 
 ### User Interface:
