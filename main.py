@@ -231,7 +231,7 @@ class FileAnalyzerThread(QThread):
                         # Extract GPS Info from EXIF
                         gps_info = {}
                         if 'GPSInfo' in exif_data:
-                            gps_data = exif_data[34853] # GPSInfo tag number
+                            gps_data = exif_data.get('GPSInfo', {}) # GPSInfo tag number
                             # Latitude
                             if 1 in gps_data and 2 in gps_data:
                                 lat_ref = gps_data[1]
