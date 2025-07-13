@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infoscava - Universal File Analyzer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.5s ease, color 0.5s ease;
+            overflow-x: hidden; /* Prevent horizontal scroll during transitions */
+        }
+        /* New default dark theme */
+        body.dark {
+            background-color: #0A1128; /* Dark Navy */
+            color: #E0E0E0; /* Light Gray */
+        }
+        body.light {
+            background-color: #F0F2F5; /* Very Light Gray */
+            color: #1A202C; /* Dark Slate */
+        }
+
+        /* Custom scrollbar for better aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1A202C; /* Darker track for dark theme */
+            border-radius: 10px;
+        }
+        body.light ::-webkit-scrollbar-track {
+            background: #CBD5E0; /* Lighter track for light theme */
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4A5568; /* Medium gray thumb */
+            border-radius: 10px;
+        }
+        body.light ::-webkit-scrollbar-thumb {
+            background: #A0AEC0; /* Lighter thumb for light theme */
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #6B7280;
+        }
+        body.light ::-webkit-scrollbar-thumb:hover {
+            background: #718096;
+        }
+
+        /* Ensure SHA hashes break correctly */
+        .sha-hash {
+            word-break: break-all;
+        }
+
+        /* Custom animations */
+        @keyframes pulse-slow {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.03);
+            }
+        }
+        .animate-pulse-slow {
+            animation: pulse-slow 3s infinite ease-in-out;
+        }
+
+        @keyframes fade-in-up {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .fade-in-up {
+            animation: fade-in-up 0.8s ease-out forwards;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); border-color: #63B3ED; border-top-color: transparent; }
+            25% { border-color: #A78BFA; border-top-color: transparent; } /* Purple */
+            50% { border-color: #F6AD55; border-top-color: transparent; } /* Orange */
+            75% { border-color: #48BB78; border-top-color: transparent; } /* Green */
+            100% { transform: rotate(360deg); border-color: #63B3ED; border-top-color: transparent; }
+        }
+        .animate-spin-slow {
+            animation: spin 4s linear infinite; /* Slower spin with color change */
+        }
+
+        @keyframes icon-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+        }
+        .animate-icon-pulse {
+            animation: icon-pulse 1.5s infinite ease-in-out; /* Slightly faster pulse */
+        }
+
+        /* New background animation for loading overlay */
+        @keyframes gradient-flow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        #loading-overlay {
+            background: linear-gradient(270deg, #0A1128, #1A202C, #2D3748, #1A202C, #0A1128); /* Deeper, richer blues/grays */
+            background-size: 400% 400%;
+            animation: gradient-flow 20s ease infinite; /* Slower, smoother flow */
+            transform: translateY(0); /* Initial position */
+            transition: transform 0.8s ease-out, opacity 0.8s ease-out; /* Smoother, slightly longer transition */
+            position: fixed; /* Ensure it covers the whole screen */
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            /* cursor: grab; Removed to avoid confusion, arrow indicates drag */
+        }
+
+        /* Title animation for loading overlay */
+        @keyframes title-appear {
+            from { opacity: 0; transform: translateY(-30px); letter-spacing: -0.5em; }
+            to { opacity: 1; transform: translateY(0); letter-spacing: normal; }
+        }
+        #loading-overlay h1.loading-title {
+            animation: title-appear 1s ease-out forwards;
+            animation-delay: 0.5s; /* Delay for better sequence */
+            font-size: 5.5rem; /* Even larger title */
+            line-height: 1;
+            text-shadow: 0 0 15px rgba(99, 179, 237, 0.8); /* Glow effect */
+        }
+
+        /* Subtitle animation for loading overlay */
+        @keyframes subtitle-appear {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        #loading-overlay p.loading-subtitle {
+            animation: subtitle-appear 1s ease-out forwards;
+            animation-delay: 1s; /* Delay after title */
+            font-size: 2.5rem; /* Larger subtitle */
+            letter-spacing: 0.05em; /* More tracking */
+            color: #BEE3F8; /* Lighter blue for contrast */
+        }
+
+        /* Drag indicator arrow animation */
+        @keyframes bounce-arrow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-arrow {
+            animation: bounce-arrow 1.5s infinite;
+        }
+
+        /* Main content fade-in */
+        #main-content {
+            transition: opacity 0.8s ease-in;
+        }
+    </style>
+</head>
+<body class="dark">
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="flex flex-col items-center justify-center z-50 opacity-100">
+        <h1 class="text-blue-400 drop-shadow-lg mb-8 loading-title opacity-0">Infoscava</h1>
+        <div class="relative w-36 h-36 mb-10"> <!-- Even larger spinner -->
+            <div class="absolute inset-0 border-6 border-t-6 rounded-full animate-spin-slow"></div>
+            <div class="absolute inset-0 flex items-center justify-center">
+                <img src="https://raw.githubusercontent.com/hejhdiss/Infoscava/master/icon.jpg" onerror="this.onerror=null; this.src='https://placehold.co/96x96/ffffff/000000?text=ICON';" alt="Loading Icon" class="w-28 h-28 rounded-full animate-icon-pulse">
+            </div>
+        </div>
+        <p class="text-white font-semibold tracking-wide mb-12 loading-subtitle opacity-0">Unlocking File Insights...</p>
+
+        <!-- Drag Indicator -->
+        <div class="flex flex-col items-center">
+            <p class="text-white text-lg mb-2">Drag Up to Enter</p>
+            <svg class="w-10 h-10 text-white animate-bounce-arrow" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 10l7-7m0 0l7 7m-7-7v18"></path>
+            </svg>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="hidden opacity-0">
+        <div class="min-h-screen flex flex-col items-center py-10 px-4 sm:px-6 lg:px-8">
+            <!-- Header -->
+            <header class="w-full max-w-6xl flex justify-between items-center mb-16 fade-in-up">
+                <h1 class="text-5xl font-extrabold text-blue-400 drop-shadow-lg">Infoscava</h1>
+                <button id="theme-toggle" class="p-3 rounded-full bg-blue-700 dark:bg-blue-200 text-white dark:text-blue-800 shadow-lg hover:scale-110 transition-transform duration-300">
+                    <svg id="moon-icon" class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+                    </svg>
+                    <svg id="sun-icon" class="w-7 h-7 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h1M3 12h1m15.325-7.757l-.707.707M5.332 18.668l-.707.707M18.668 5.332l-.707-.707M5.332 5.332l-.707-.707"></path>
+                    </svg>
+                </button>
+            </header>
+
+            <!-- Hero Section -->
+            <section class="w-full max-w-6xl text-center mb-20 p-12 bg-gradient-to-br from-indigo-700 to-purple-800 text-white rounded-3xl shadow-2xl transform hover:scale-102 transition-all duration-500 relative overflow-hidden fade-in-up" style="animation-delay: 0.2s;">
+                <div class="absolute inset-0 opacity-10" style="background-image: url('data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.1\'%3E%3Cpath d=\'M36 34.5L30.5 29 36 23.5 41.5 29zM30 34.5L24.5 29 30 23.5 35.5 29zM24 34.5L18.5 29 24 23.5 29.5 29zM18 34.5L12.5 29 18 23.5 23.5 29zM42 34.5L36.5 29 42 23.5 47.5 29zM48 34.5L42.5 29 48 23.5 53.5 29zM0 34.5L-5.5 29 0 23.5 5.5 29zM6 34.5L0.5 29 6 23.5 11.5 29zM36 40.5L30.5 35 36 29.5 41.5 35zM30 40.5L24.5 35 30 29.5 35.5 35zM24 40.5L18.5 35 24 29.5 29.5 35zM18 40.5L12.5 35 18 29.5 23.5 35zM42 40.5L36.5 35 42 29.5 47.5 35zM48 40.5L42.5 35 48 29.5 53.5 35zM0 40.5L-5.5 35 0 29.5 5.5 35zM6 40.5L0.5 35 6 29.5 11.5 35zM36 46.5L30.5 41 36 35.5 41.5 41zM30 46.5L24.5 41 30 35.5 35.5 41zM24 46.5L18.5 41 24 35.5 29.5 41zM18 46.5L12.5 41 18 35.5 23.5 41zM42 46.5L36.5 41 42 35.5 47.5 41zM48 46.5L42.5 41 48 35.5 53.5 41zM0 46.5L-5.5 41 0 35.5 5.5 41zM6 46.5L0.5 41 6 35.5 11.5 41zM36 52.5L30.5 47 36 41.5 41.5 47zM30 52.5L24.5 47 30 41.5 35.5 47zM24 52.5L18.5 47 24 41.5 29.5 47zM18 52.5L12.5 47 18 41.5 23.5 47zM42 52.5L36.5 47 42 41.5 47.5 47zM48 52.5L42.5 47 48 41.5 53.5 47zM0 52.5L-5.5 47 0 41.5 5.5 47zM6 52.5L0.5 47 6 41.5 11.5 47zM36 58.5L30.5 53 36 47.5 41.5 53zM30 58.5L24.5 53 30 47.5 35.5 53zM24 58.5L18.5 53 24 47.5 29.5 53zM18 58.5L12.5 53 18 47.5 23.5 53zM42 58.5L36.5 53 42 47.5 47.5 53zM48 58.5L42.5 53 48 47.5 53.5 53zM0 58.5L-5.5 53 0 47.5 5.5 53zM6 58.5L0.5 53 6 47.5 11.5 53zM36 4.5L30.5 -1 36 -6.5 41.5 -1zM30 4.5L24.5 -1 30 -6.5 35.5 -1zM24 4.5L18.5 -1 24 -6.5 29.5 -1zM18 4.5L12.5 -1 18 -6.5 23.5 -1zM42 4.5L36.5 -1 42 -6.5 47.5 -1zM48 4.5L42.5 -1 48 -6.5 53.5 -1zM0 4.5L-5.5 -1 0 -6.5 5.5 -1zM6 4.5L0.5 -1 6 -6.5 11.5 -1zM36 10.5L30.5 5 36 -0.5 41.5 5zM30 10.5L24.5 5 30 -0.5 35.5 5zM24 10.5L18.5 5 24 -0.5 29.5 5zM18 10.5L12.5 5 18 -0.5 23.5 5zM42 10.5L36.5 5 42 -0.5 47.5 5zM48 10.5L42.5 5 48 -0.5 53.5 5zM0 10.5L-5.5 5 0 -0.5 5.5 5zM6 10.5L0.5 5 6 -0.5 11.5 5zM36 16.5L30.5 11 36 5.5 41.5 11zM30 16.5L24.5 11 30 5.5 35.5 11zM24 16.5L18.5 11 24 5.5 29.5 11zM18 16.5L12.5 11 18 5.5 23.5 11zM42 16.5L36.5 11 42 5.5 47.5 11zM48 16.5L42.5 11 48 5.5 53.5 11zM0 16.5L-5.5 11 0 5.5 5.5 11zM6 16.5L0.5 11 6 5.5 11.5 11zM36 22.5L30.5 17 36 11.5 41.5 17zM30 22.5L24.5 17 30 11.5 35.5 17zM24 22.5L18.5 17 24 11.5 29.5 17zM18 22.5L12.5 17 18 11.5 23.5 17zM42 22.5L36.5 17 42 11.5 47.5 17zM48 22.5L42.5 17 48 11.5 53.5 17zM0 22.5L-5.5 17 0 11.5 5.5 17zM6 22.5L0.5 17 6 11.5 11.5 17z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E');"></div>
+                <img src="https://raw.githubusercontent.com/hejhdiss/Infoscava/master/icon.jpg" onerror="this.onerror=null; this.src='https://placehold.co/100x100/ffffff/000000?text=ICON';" alt="Infoscava Icon" class="mx-auto mb-8 rounded-full shadow-xl border-4 border-blue-400 animate-pulse-slow w-[100px] h-[100px]">
+                <h2 class="text-6xl font-extrabold mb-6 drop-shadow-lg leading-tight">Universal File Analyzer</h2>
+                <p class="text-2xl mb-10 opacity-90 max-w-2xl mx-auto">Empowering your insights with comprehensive file analysis and dynamic plugin capabilities.</p>
+            </section>
+
+            <!-- Prominent Download Now Section -->
+            <section class="w-full max-w-6xl mb-20 p-10 bg-slate-800 dark:bg-slate-100 rounded-3xl shadow-xl border border-slate-700 dark:border-slate-300 transform hover:shadow-2xl transition-shadow duration-300 fade-in-up" style="animation-delay: 0.4s;">
+                <h3 class="text-4xl font-bold text-blue-400 dark:text-blue-700 mb-10 text-center">Get Infoscava Now!</h3>
+                <div class="flex flex-col sm:flex-row justify-center items-center gap-10">
+                    <!-- GitHub Download Button -->
+                    <a href="https://github.com/hejhdiss/Infoscava/releases/latest" target="_blank" class="flex flex-col items-center p-6 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold py-4 px-10 rounded-xl shadow-2xl hover:scale-105 transition-all duration-300 transform hover:-translate-y-1">
+                        <svg class="w-12 h-12 mb-3" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.47.087.677-.233.677-.517 0-.256-.009-1.02-.015-2.002-2.782.603-3.37-1.34-3.37-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.618.069-.606.069-.606 1.003.07 1.531 1.032 1.531 1.032.892 1.529 2.341 1.088 2.91.829.091-.645.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.953 0-1.096.39-1.99.999-2.694-.1-.253-.434-1.273.096-2.653 0 0 .81-.27 2.645 1.025A9.356 9.003 0 0112 6.865c.85.004 1.701.111 2.503.324 1.835-1.295 2.645-1.025 2.645-1.025.53 1.38.197 2.4.096 2.653.61.704.999 1.598.999 2.694 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .286.206.607.683.509C21.137 20.19 24 16.436 24 12.017 24 6.484 19.522 2 14 2h-2z" clip-rule="evenodd" />
+                        </svg>
+                        <span class="text-xl">Download from GitHub</span>
+                    </a>
+                    <!-- SourceForge Download Button and Badge -->
+                    <div class="flex flex-col items-center gap-4">
+                        <a href="https://sourceforge.net/projects/infoscava/files/latest/download" target="_blank" class="transform hover:scale-105 transition-transform duration-300">
+                            <img alt="Download Infoscava" src="https://a.fsdn.com/con/app/sf-download-button" width="276" height="48" srcset="https://a.fsdn.com/con/app/sf-download-button?button_size=2x 2x">
+                        </a>
+                        <a href="https://sourceforge.net/projects/infoscava/files/latest/download" target="_blank">
+                            <img alt="Download Infoscava" src="https://img.shields.io/sourceforge/dt/infoscava.svg" class="transform hover:scale-105 transition-transform duration-300">
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Key Features Section -->
+            <section class="w-full max-w-6xl mb-20 fade-in-up" style="animation-delay: 0.6s;">
+                <h3 class="text-4xl font-bold text-slate-100 dark:text-slate-800 mb-12 text-center">Key Features in v2.1.9</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <!-- Feature Card: File Analysis -->
+                    <div class="bg-slate-800 dark:bg-white p-8 rounded-2xl shadow-lg border border-slate-700 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <div class="p-4 rounded-full bg-blue-500 text-white mb-6 shadow-md">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9h-7V2zM10 18H8v-2h2v2zm0-4H8v-2h2v2zm0-4H8V8h2v2zm6 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V8h2v2z" />
+                            </svg>
+                        </div>
+                        <h4 class="text-2xl font-semibold text-blue-400 dark:text-blue-700 mb-4">File Analysis</h4>
+                        <ul class="list-disc list-inside text-slate-300 dark:text-slate-700 space-y-2 text-left">
+                            <li>Metadata, hashes, text, hex, structured data (JSON)</li>
+                            <li>Image (EXIF, GPS), Base64, entropy, byte histograms</li>
+                        </ul>
+                    </div>
+                    <!-- Feature Card: User Interface -->
+                    <div class="bg-slate-800 dark:bg-white p-8 rounded-2xl shadow-lg border border-slate-700 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <div class="p-4 rounded-full bg-purple-500 text-white mb-6 shadow-md">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M21 2H3a2 2 0 00-2 2v16a2 2 0 002 2h18a2 2 0 002-2V4a2 2 0 00-2-2zm-1 16H4V6h16v12zM8 10h8v2H8v-2z" />
+                            </svg>
+                        </div>
+                        <h4 class="text-2xl font-semibold text-blue-400 dark:text-blue-700 mb-4">User Interface</h4>
+                        <ul class="list-disc list-inside text-slate-300 dark:text-slate-700 space-y-2 text-left">
+                            <li>Tabbed design, file browser, drag-and-drop</li>
+                            <li>Theme toggle, file watcher, keyboard shortcuts</li>
+                            <li>Analysis export (JSON, TXT, HTML)</li>
+                            <li>Search Tab with multi-match highlighting</li>
+                        </ul>
+                    </div>
+                    <!-- Feature Card: Plugin System -->
+                    <div class="bg-slate-800 dark:bg-white p-8 rounded-2xl shadow-lg border border-slate-700 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <div class="p-4 rounded-full bg-teal-500 text-white mb-6 shadow-md">
+                            <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z" />
+                            </svg>
+                        </div>
+                        <h4 class="text-2xl font-semibold text-blue-400 dark:text-blue-700 mb-4">Plugin System</h4>
+                        <ul class="list-disc list-inside text-slate-300 dark:text-slate-700 space-y-2 text-left">
+                            <li>Dynamic Plugin Loading (.infoscava files)</li>
+                            <li>Plugin Management: Load, reload, delete plugins</li>
+                            <li>Dynamic Plugin Tabs for custom output (HTML, JSON, text)</li>
+                            <li>Plugin History log</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SHA and Source Code Downloads Section -->
+            <section class="w-full max-w-6xl mb-20 p-10 bg-slate-800 dark:bg-slate-100 rounded-3xl shadow-lg border border-slate-700 dark:border-slate-300 fade-in-up" style="animation-delay: 0.8s;">
+                <h3 class="text-4xl font-bold text-blue-400 dark:text-blue-700 mb-10 text-center">SHA and Source Code Downloads</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <!-- Installer -->
+                    <div class="bg-slate-700 dark:bg-white p-6 rounded-xl shadow-md border border-slate-600 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <h4 class="text-xl font-semibold text-slate-100 dark:text-slate-800 mb-3">Infoscava_installer_2.1.9.exe</h4>
+                        <p class="text-sm text-slate-400 dark:text-slate-600 mb-4">SHA256: <span id="sha-installer" class="font-mono text-xs sha-hash">79d49bdbf644c40580b2fe71f647d79c54853b004d65280dd93319ee25cdc045</span></p>
+                        <button class="copy-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-5 rounded-full transition-colors duration-200 shadow-md" data-clipboard-target="sha-installer">
+                            Copy SHA256
+                        </button>
+                    </div>
+                    <!-- Standalone 7z -->
+                    <div class="bg-slate-700 dark:bg-white p-6 rounded-xl shadow-md border border-slate-600 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <h4 class="text-xl font-semibold text-slate-100 dark:text-slate-800 mb-3">Infoscava_standalone_2.1.9.7z</h4>
+                        <p class="text-sm text-slate-400 dark:text-slate-600 mb-4">SHA256: <span id="sha-7z" class="font-mono text-xs sha-hash">192205e77da21e8b2802c5e5296a470f7fcbcab6f5bce9756f33fd28ab8b163d</span></p>
+                        <button class="copy-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-5 rounded-full transition-colors duration-200 shadow-md" data-clipboard-target="sha-7z">
+                            Copy SHA256
+                        </button>
+                    </div>
+                    <!-- Standalone exe -->
+                    <div class="bg-slate-700 dark:bg-white p-6 rounded-xl shadow-md border border-slate-600 dark:border-slate-300 flex flex-col items-center text-center transform hover:scale-105 transition-transform duration-300">
+                        <h4 class="text-xl font-semibold text-slate-100 dark:text-slate-800 mb-3">Infoscava_standalone_2.1.9.exe</h4>
+                        <p class="text-sm text-slate-400 dark:text-slate-600 mb-4">SHA256: <span id="sha-exe" class="font-mono text-xs sha-hash">0b36dada42595eecdba4402ce9020da2e65bc81360054f1150043da308c74ef4</span></p>
+                        <button class="copy-btn bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-5 rounded-full transition-colors duration-200 shadow-md" data-clipboard-target="sha-exe">
+                            Copy SHA256
+                        </button>
+                    </div>
+                </div>
+                <div class="text-center mt-10 flex flex-col sm:flex-row justify-center gap-6">
+                    <a href="https://github.com/hejhdiss/Infoscava/archive/refs/tags/v2.1.9.zip" target="_blank" class="inline-block bg-slate-600 hover:bg-slate-700 dark:bg-slate-300 dark:hover:bg-slate-400 text-slate-100 dark:text-slate-800 font-bold py-3 px-8 rounded-full transition-colors duration-200 shadow-md hover:shadow-lg">
+                        Source code (zip)
+                    </a>
+                    <a href="https://github.com/hejhdiss/Infoscava/archive/refs/tags/v2.1.9.tar.gz" target="_blank" class="inline-block bg-slate-600 hover:bg-slate-700 dark:bg-slate-300 dark:hover:bg-slate-400 text-slate-100 dark:text-slate-800 font-bold py-3 px-8 rounded-full transition-colors duration-200 shadow-md hover:shadow-lg">
+                        Source code (tar.gz)
+                    </a>
+                </div>
+            </section>
+
+            <!-- Contribution & Support -->
+            <section class="w-full max-w-6xl mb-20 p-10 bg-slate-800 dark:bg-slate-100 rounded-3xl shadow-lg border border-slate-700 dark:border-slate-300 fade-in-up" style="animation-delay: 1s;">
+                <h3 class="text-4xl font-bold text-blue-400 dark:text-blue-700 mb-8 text-center">Contribution & Support</h3>
+                <p class="text-slate-300 dark:text-slate-700 mb-6 leading-relaxed text-center">
+                    We (the developer Muhammed Shafin P and the supporter community) are actively looking for contributors, collaborators, and supporters to help grow Infoscava!
+                </p>
+                <ul class="list-disc list-inside text-slate-300 dark:text-slate-700 space-y-3 mb-8 px-4 sm:px-0">
+                    <li>Problems/Bugs: If you encounter any issues, please use the <a href="https://github.com/hejhdiss/Infoscava/discussions" target="_blank" class="text-blue-400 dark:text-blue-700 hover:underline font-medium">Discussions section</a> or create a new <a href="https://github.com/hejhdiss/Infoscava/issues" target="_blank" class="text-blue-400 dark:text-blue-700 hover:underline font-medium">Issue</a>.</li>
+                    <li>Contributions: We welcome code contributions, feature suggestions, and any form of support. Feel free to reach out via discussions or pull requests.</li>
+                    <li>Check out our <a href="https://github.com/hejhdiss/Infoscava/wiki" target="_blank" class="text-blue-400 dark:text-blue-700 hover:underline font-medium">GitHub Wiki</a> for more information!</li>
+                </ul>
+                <p class="text-slate-300 dark:text-slate-700 leading-relaxed text-center">
+                    We plan to create a Linux version and continue with more updates and bug fixes. Please support and contribute to the community.
+                </p>
+            </section>
+
+            <!-- Credits & License -->
+            <footer class="w-full max-w-6xl text-center text-slate-400 dark:text-slate-600 text-sm mt-10 py-6 border-t border-slate-700 dark:border-slate-300 fade-in-up" style="animation-delay: 1.2s;">
+                <p class="mb-2">Developer: Muhammed Shafin P (<a href="https://github.com/hejhdiss" target="_blank" class="text-blue-400 dark:text-blue-700 hover:underline">@hejhdiss</a>)</p>
+                <p class="mb-2">Built with PySide6, PyInstaller, and Inno Setup. (Python 3.11)</p>
+                <p>This project is licensed under the <a href="https://github.com/hejhdiss/Infoscava/blob/master/LICENSE.txt" target="_blank" class="text-blue-400 dark:text-blue-700 hover:underline">MIT License</a>.</p>
+            </footer>
+        </div>
+    </div>
+
+    <div id="message-box" class="fixed bottom-5 right-5 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg hidden transition-opacity duration-300 opacity-0 z-50">
+        Copied to clipboard!
+    </div>
+
+    <script>
+        // Loading Screen Logic
+        window.onload = function() {
+            const loadingOverlay = document.getElementById('loading-overlay');
+            const mainContent = document.getElementById('main-content');
+
+            let isDragging = false;
+            let startY = 0;
+            let currentY = 0;
+            const dragThreshold = window.innerHeight * 0.3; // Drag 30% of screen height to activate
+
+            // Function to reveal content
+            function revealContent() {
+                loadingOverlay.style.transform = 'translateY(-100%)';
+                loadingOverlay.style.opacity = '0';
+                loadingOverlay.addEventListener('transitionend', () => {
+                    loadingOverlay.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                    mainContent.classList.add('opacity-100');
+                }, { once: true });
+            }
+
+            // Mouse events for dragging
+            loadingOverlay.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startY = e.clientY;
+                loadingOverlay.style.transition = 'none'; // Disable transition during drag
+            });
+
+            loadingOverlay.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+                currentY = e.clientY;
+                const deltaY = startY - currentY; // Positive for upward drag
+
+                if (deltaY > 0) { // Only allow dragging upwards
+                    loadingOverlay.style.transform = `translateY(-${deltaY}px)`;
+                    loadingOverlay.style.opacity = 1 - (deltaY / window.innerHeight); // Fade out as it moves up
+                }
+            });
+
+            loadingOverlay.addEventListener('mouseup', () => {
+                if (!isDragging) return;
+                isDragging = false;
+                loadingOverlay.style.transition = 'transform 0.8s ease-out, opacity 0.8s ease-out'; // Re-enable transition
+
+                const finalDeltaY = startY - currentY;
+                if (finalDeltaY >= dragThreshold) {
+                    revealContent();
+                } else {
+                    // Snap back if threshold not met
+                    loadingOverlay.style.transform = 'translateY(0)';
+                    loadingOverlay.style.opacity = '1';
+                }
+            });
+
+            // Touch events for dragging (for mobile)
+            loadingOverlay.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                startY = e.touches[0].clientY;
+                loadingOverlay.style.transition = 'none';
+            });
+
+            loadingOverlay.addEventListener('touchmove', (e) => {
+                if (!isDragging) return;
+                currentY = e.touches[0].clientY;
+                const deltaY = startY - currentY;
+
+                if (deltaY > 0) {
+                    loadingOverlay.style.transform = `translateY(-${deltaY}px)`;
+                    loadingOverlay.style.opacity = 1 - (deltaY / window.innerHeight);
+                }
+            });
+
+            loadingOverlay.addEventListener('touchend', () => {
+                if (!isDragging) return;
+                isDragging = false;
+                loadingOverlay.style.transition = 'transform 0.8s ease-out, opacity 0.8s ease-out';
+
+                const finalDeltaY = startY - currentY;
+                if (finalDeltaY >= dragThreshold) {
+                    revealContent();
+                } else {
+                    loadingOverlay.style.transform = 'translateY(0)';
+                    loadingOverlay.style.opacity = '1';
+                }
+            });
+        };
+
+        // Theme Toggle Logic
+        const themeToggle = document.getElementById('theme-toggle');
+        const sunIcon = document.getElementById('sun-icon');
+        const moonIcon = document.getElementById('moon-icon');
+        const body = document.body;
+
+        // Check for saved theme in localStorage or default to dark
+        const currentTheme = localStorage.getItem('theme') || 'dark'; // Default to dark
+        if (currentTheme === 'dark') {
+            body.classList.add('dark');
+            body.classList.remove('light');
+            sunIcon.classList.add('hidden');
+            moonIcon.classList.remove('hidden');
+        } else {
+            body.classList.add('light');
+            body.classList.remove('dark');
+            sunIcon.classList.remove('hidden');
+            moonIcon.classList.add('hidden');
+        }
+
+        themeToggle.addEventListener('click', () => {
+            if (body.classList.contains('light')) {
+                body.classList.remove('light');
+                body.classList.add('dark');
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+                localStorage.setItem('theme', 'dark');
+            } else {
+                body.classList.remove('dark');
+                body.classList.add('light');
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+                localStorage.setItem('theme', 'light');
+            }
+        });
+
+        // Copy to Clipboard Logic
+        const copyButtons = document.querySelectorAll('.copy-btn');
+        const messageBox = document.getElementById('message-box');
+
+        copyButtons.forEach(button => {
+            button.addEventListener('click', (event) => {
+                // Get the ID from the data-clipboard-target attribute of the clicked button
+                const targetId = event.currentTarget.dataset.clipboardTarget;
+                const targetElement = document.getElementById(targetId);
+                
+                if (targetElement) {
+                    const textToCopy = targetElement.textContent || targetElement.innerText;
+                    
+                    // Create a temporary textarea element to copy the text
+                    const tempInput = document.createElement('textarea');
+                    tempInput.value = textToCopy;
+                    document.body.appendChild(tempInput);
+                    tempInput.select(); // Select the text in the textarea
+                    
+                    try {
+                        // Execute the copy command
+                        document.execCommand('copy');
+                        showMessage('Copied to clipboard!');
+                    } catch (err) {
+                        console.error('Failed to copy text: ', err);
+                        showMessage('Failed to copy!', 'bg-red-500');
+                    } finally {
+                        // Remove the temporary textarea
+                        document.body.removeChild(tempInput);
+                    }
+                } else {
+                    console.error(`Element with ID '${targetId}' not found for copying.`);
+                    showMessage('Error: Element not found!', 'bg-red-500');
+                }
+            });
+        });
+
+        function showMessage(message, bgColorClass = 'bg-green-500') {
+            messageBox.textContent = message;
+            messageBox.className = `fixed bottom-5 right-5 text-white px-4 py-2 rounded-lg shadow-lg hidden transition-opacity duration-300 ${bgColorClass}`;
+            messageBox.classList.remove('hidden');
+            messageBox.classList.remove('opacity-0');
+            messageBox.classList.add('opacity-100');
+
+            setTimeout(() => {
+                messageBox.classList.remove('opacity-100');
+                messageBox.classList.add('opacity-0');
+                messageBox.addEventListener('transitionend', () => {
+                    messageBox.classList.add('hidden');
+                }, { once: true });
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
