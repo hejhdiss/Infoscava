@@ -51,6 +51,15 @@ python main.py --file "path to file" --lang (language name in short )
 - **Dynamic Plugin Tabs:** Plugins can generate their own tabs for custom output, including HTML reports, JSON tables, or plain text.
 - **Plugin History:** A dedicated tab to log plugin loading, execution, and deletion events.
 
+### Extended Capabilities via Plugins:
+
+The plugin system in Infoscava is designed to extend the app's core functionality by integrating powerful external tools such as **YARA**, **ExifTool**, and others through built-in Python modules like `os`, `shutil`, and `subprocess`. When bundled via PyInstaller, these capabilities are self-contained, allowing advanced analysis features without requiring external dependencies.
+
+Users can create or install plugins that connect with CLI tools or APIs, enabling **deep file inspection, automated threat detection, and cross-tool orchestration**. However, caution is advised: **plugins from untrusted sources may introduce security risks**, so users should only install those they trust.
+
+The core GUI will remain focused on essential features, while **advanced features are delegated to plugins**, allowing users to customize and scale Infoscava to their specific needs. The system also supports **hook-based on-demand integration**, meaning plugins can act as bridges to other tools or services dynamically. This opens up numerous opportunities for building a powerful and extensible file analysis ecosystem around Infoscava.
+
+
 ## Contribution & Support
 
 We are actively looking for contributors, collaborators, and supporters to help grow Infoscava!
