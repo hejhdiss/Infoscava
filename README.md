@@ -55,3 +55,6 @@ Built with PySide6, PyInstaller, and Inno Setup.(**Python 3.11**)
 
 This project is licensed under the [MIT License](LICENSE.txt).
 
+### Antivirus Detections
+
+It has been reported that Infoscava's compiled binaries may be flagged by some antivirus software as a "Trojan" or similar threat. We want to assure users that Infoscava is an open-source project, and its entire codebase is publicly available for review. These detections are often false positives, common with new or less widely distributed executables that perform file system operations or are packed for distribution. We encourage users to inspect the source code if they have concerns.
