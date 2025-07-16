@@ -8,6 +8,21 @@
 
 **Download:**[v2.1.9](https://github.com/hejhdiss/Infoscava/releases/tag/v2.1.9)
 
+### ⚠️ Notice: No More Binary Releases
+
+Due to frequent antivirus false positives and licensing complications, all future versions of Infoscava will be distributed in **pure Python form only**.
+
+You can run the app using:
+
+```bash
+python main.py --file "path to file" --lang (language name in short )
+```
+
+```
+--file : adds only if you wants to open a file on start.
+--lang : not tested.
+```
+
 ## Key Features in v2.1.9
 
 - **File Analysis:** Metadata, hashes, text, hex, structured data (JSON), image (EXIF, GPS), Base64, entropy, byte histograms.
